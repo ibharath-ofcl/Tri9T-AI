@@ -28,6 +28,7 @@ from app.schemas.qa_test_case import (
     TestCaseStalenessReport,
     TestSuiteStalenessResponse,
 )
+from app.services.grounding_auditor import GroundingAuditor
 from app.services.llm_provider import BaseLLMProvider, get_llm_provider
 from app.services.staleness_classifier import (
     SAFETY_DISCLAIMER,
@@ -58,12 +59,14 @@ class QAGenerationService:
         store: Optional[TestSuiteStore] = None,
         provider: Optional[BaseLLMProvider] = None,
         classifier: Optional[StalenessClassifier] = None,
+        grounding_auditor: Optional[GroundingAuditor] = None,
         max_attempts: int = 3,
     ):
         self.repository = repository or DocumentRepository()
         self.store = store or get_test_suite_store()
         self._provider = provider
         self.classifier = classifier or StalenessClassifier()
+        self.grounding_auditor = grounding_auditor or GroundingAuditor()
         self.max_attempts = max_attempts
 
     @property
@@ -334,7 +337,16 @@ class QAGenerationService:
             source_content_hashes=source_hashes,
         )
 
-        self.store.save_test_suite(suite_payload)
+        # 5. Execute deterministic source-grounding audit
+        self.grounding_auditor.audit_suite(suite_payload, source_nodes)
+
+        # 6. Atomic persistence in document store with fail-safe error handling
+        try:
+            self.store.save_test_suite(suite_payload)
+        except Exception as store_err:
+            logger.error("Failed to persist generated test suite %s in document store: %s", generation_id, store_err)
+            raise RuntimeError(f"Document store persistence failed: {str(store_err)}") from store_err
+
         return suite_payload
 
     def evaluate_test_suite_staleness(

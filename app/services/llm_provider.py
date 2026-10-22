@@ -203,15 +203,18 @@ class MockLLMProvider(BaseLLMProvider):
             test_cases.append({
                 "TestCaseId": "TC-BAT-001",
                 "Title": "Verify Battery Low-Charge Threshold Icon Display",
-                "Prerequisites": ["CardioTrack CT-200 unit with 4 fresh AA alkaline batteries", "Programmable DC power supply attached to battery terminals"],
+                "Prerequisites": [
+                    "CardioTrack CT-200 unit with four fresh AA alkaline batteries",
+                    "[PROPOSED SETUP] Programmable DC power supply attached to battery terminals to simulate voltage drop"
+                ],
                 "Steps": [
                     "1. Connect the programmable DC power supply to the battery terminal.",
                     "2. Lower the supply voltage until the remaining capacity drops below 15%.",
                     "3. Observe the LCD display screen for the battery status indicator icon."
                 ],
-                "ExpectedResult": "The device displays a flashing low-battery icon when remaining capacity falls below 15%.",
-                "PassFailCriteria": "PASS if low-battery icon appears immediately upon reaching 15% threshold; FAIL if icon does not appear or appears late.",
-                "StandardRef": "CT-200 Manual Section 2.1.1.1 Battery Life; no external standard specified in manual",
+                "ExpectedResult": "The device displays a low-battery icon once remaining capacity falls below 15%.",
+                "PassFailCriteria": "PASS if low-battery icon appears once remaining capacity falls below 15%; FAIL if icon does not appear.",
+                "StandardRef": "CT-200 Manual Section 2.1.1.1 Battery Life Under Typical Use; no external standard specified in manual",
                 "TestType": "boundary",
                 "CoverageTags": ["battery", "p0_safety", "threshold"],
                 "HumanReviewRequired": False,
@@ -219,15 +222,18 @@ class MockLLMProvider(BaseLLMProvider):
             test_cases.append({
                 "TestCaseId": "TC-BAT-002",
                 "Title": "Verify Battery Measurement Cycle Rating Degradation",
-                "Prerequisites": ["CT-200 automated endurance test bench", "Standard 4x AA alkaline battery set"],
+                "Prerequisites": [
+                    "CardioTrack CT-200 unit with four fresh AA alkaline batteries",
+                    "[PROPOSED SETUP] Automated cycling endurance fixture simulating 3 measurements per day"
+                ],
                 "Steps": [
                     "1. Subject the CT-200 monitor to continuous cycling of 3 measurements per day.",
                     "2. Record battery discharge curves up to 300 cycles.",
                     "3. Verify unit operates without battery replacement warning up to 300 measurement cycles."
                 ],
-                "ExpectedResult": "The unit delivers approximately 300 measurement cycles under typical use before requiring replacement.",
-                "PassFailCriteria": "PASS if device completes at least 300 measurement cycles before battery replacement warning; FAIL if exhausted prematurely.",
-                "StandardRef": "CT-200 Manual Section 2.1.1.1 Battery Life; no external standard specified in manual",
+                "ExpectedResult": "Four AA alkaline batteries provide approximately 300 measurement cycles under typical use (three measurements per day) before requiring replacement.",
+                "PassFailCriteria": "PASS if device completes approximately 300 measurement cycles before battery replacement warning; FAIL if exhausted significantly earlier.",
+                "StandardRef": "CT-200 Manual Section 2.1.1.1 Battery Life Under Typical Use; no external standard specified in manual",
                 "TestType": "nominal",
                 "CoverageTags": ["battery", "endurance", "rating"],
                 "HumanReviewRequired": False,
@@ -236,15 +242,20 @@ class MockLLMProvider(BaseLLMProvider):
         if is_cuff or not is_battery:
             test_cases.append({
                 "TestCaseId": "TC-CUFF-001",
-                "Title": "Verify Incremental Cuff Inflation Step Size",
-                "Prerequisites": ["Calibrated digital manometer (±0.5 mmHg)", "Rigid artificial limb test fixture", "CT-200 monitor"],
+                "Title": "Verify Incremental Cuff Inflation Step Size and Maximum Limit",
+                "Prerequisites": [
+                    "CardioTrack CT-200 unit and standard adult cuff",
+                    "[PROPOSED SETUP] Calibrated digital manometer connected inline to cuff bladder",
+                    "[PROPOSED SETUP] Rigid artificial limb test fixture without pulse signal to trigger re-inflation steps"
+                ],
                 "Steps": [
                     "1. Attach cuff to artificial limb fixture and connect manometer inline.",
                     "2. Initiate blood pressure measurement.",
-                    "3. If pulse signal is not detected at initial 180 mmHg target, measure the step increment size for subsequent inflation."
+                    "3. In the absence of detected pulse at initial 180 mmHg target, measure the step increment size for subsequent inflation.",
+                    "4. Observe maximum cutoff pressure before abort."
                 ],
-                "ExpectedResult": "The device inflates in 40 mmHg increments up to a maximum limit of 299 mmHg.",
-                "PassFailCriteria": "PASS if step size equals 40 ± 2 mmHg; FAIL if increment deviates from 40 mmHg.",
+                "ExpectedResult": "If the user's pulse is not detected by 180 mmHg, the device inflates in 40 mmHg increments up to a maximum of 299 mmHg before aborting with an error.",
+                "PassFailCriteria": "PASS if device inflates in 40 mmHg increments up to a maximum of 299 mmHg before aborting; FAIL if increment differs from 40 mmHg or maximum exceeds 299 mmHg.",
                 "StandardRef": "CT-200 Manual Section 3.2 Cuff Inflation Sequence; no external standard specified in manual",
                 "TestType": "boundary",
                 "CoverageTags": ["cuff", "pressure", "step_increment"],
@@ -255,16 +266,20 @@ class MockLLMProvider(BaseLLMProvider):
             test_cases.append({
                 "TestCaseId": "TC-ERR-001",
                 "Title": "Verify Overpressure Condition E3 Auto-Deflation Timing",
-                "Prerequisites": ["Pneumatic test bench with fast-action overpressure valve", "Calibrated digital pressure transducer and oscilloscope"],
+                "Prerequisites": [
+                    "CardioTrack CT-200 blood pressure monitor",
+                    "[PROPOSED SETUP] Pneumatic test bench with fast-action overpressure valve",
+                    "[PROPOSED SETUP] Calibrated digital pressure transducer and oscilloscope"
+                ],
                 "Steps": [
                     "1. Connect the CT-200 pneumatic port to the test bench.",
                     "2. Induce an artificial overpressure condition exceeding normal operational limits.",
                     "3. Trigger timing capture upon overpressure detection.",
-                    "4. Measure the elapsed duration until the auto-deflation solenoid vents pressure below 15 mmHg."
+                    "4. Measure the elapsed duration until auto-deflation completes."
                 ],
-                "ExpectedResult": "The device aborts measurement, auto-deflates within 2 seconds, and displays error code E3.",
-                "PassFailCriteria": "PASS if cuff auto-deflates completely in <= 2.0 seconds and error code E3 is displayed on LCD; FAIL otherwise.",
-                "StandardRef": "CT-200 Manual Section 4.2 Error Codes Table; no external standard specified in manual",
+                "ExpectedResult": "Upon detecting overpressure condition, the device auto-deflates within 2 seconds and displays error code E3.",
+                "PassFailCriteria": "PASS if cuff auto-deflates within 2 seconds and error code E3 is displayed on LCD; FAIL otherwise.",
+                "StandardRef": "CT-200 Manual Section 4.2 Error Codes (Table 4.1); no external standard specified in manual",
                 "TestType": "timing",
                 "CoverageTags": ["error_handling", "safety", "auto_deflation", "timing"],
                 "HumanReviewRequired": False,
@@ -275,15 +290,18 @@ class MockLLMProvider(BaseLLMProvider):
             num = len(test_cases) + 1
             test_cases.append({
                 "TestCaseId": f"TC-GEN-00{num}",
-                "Title": f"Verify Auxiliary Device Nominal Operation Requirement {num}",
-                "Prerequisites": ["Standard CardioTrack CT-200 test setup", "Ambient room temperature 20-25 °C"],
-                "Steps": [
-                    "1. Power on device in standard operating mode.",
-                    "2. Execute operational self-test.",
-                    "3. Verify device status indicator."
+                "Title": f"Verify Adult Arm Circumference Range Operational Eligibility {num}",
+                "Prerequisites": [
+                    "CardioTrack CT-200 blood pressure monitor and cuff",
+                    "[PROPOSED SETUP] Calibrated cylindrical arm circumference test forms within 22–42 cm"
                 ],
-                "ExpectedResult": "The device operates normally within documented operational parameters.",
-                "PassFailCriteria": "PASS if device status indicator confirms ready state; FAIL if error is displayed.",
+                "Steps": [
+                    "1. Fit cuff onto arm form calibrated to 22 cm circumference and execute measurement.",
+                    "2. Fit cuff onto arm form calibrated to 42 cm circumference and execute measurement.",
+                    "3. Verify device status indicator confirms ready state."
+                ],
+                "ExpectedResult": "The CT-200 is intended to non-invasively measure blood pressure in adults with an arm circumference of 22–42 cm.",
+                "PassFailCriteria": "PASS if cuff accommodates adult arm circumference range of 22–42 cm and operates normally; FAIL otherwise.",
                 "StandardRef": "CT-200 Manual Section 1.1 Intended Use; no external standard specified in manual",
                 "TestType": "nominal",
                 "CoverageTags": ["general", "nominal"],
