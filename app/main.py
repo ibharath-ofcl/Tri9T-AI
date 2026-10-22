@@ -52,11 +52,28 @@ from app.services.staleness_classifier import (
     StalenessClassifier,
 )
 from app.services.version_matcher import ChangeClassification
+from app.repositories.test_suite_store import get_test_suite_store
+from app.schemas.qa_test_case import (
+    DocumentTestSuiteImpactResponse,
+    GenerateTestSuiteRequest,
+    GeneratedTestSuitePayload,
+    TestSuiteStalenessResponse,
+)
+from app.services.llm_provider import (
+    LLMConfigurationError,
+    LLMProviderError,
+    LLMTransientError,
+)
+from app.services.qa_generation_service import (
+    GenerationValidationError,
+    IdempotencyConflictError,
+    QAGenerationService,
+)
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
-    description="Document Intelligence, Lineage & Staleness API for CT-200 Blood Pressure Monitor Manuals",
+    version="0.5.0",
+    description="Document Intelligence, Lineage, Staleness & QA Generation API for CT-200 Blood Pressure Monitor Manuals",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -76,6 +93,12 @@ repo = DocumentRepository()
 ingestion_service = DocumentIngestionService(repository=repo, parser=parser)
 classifier = StalenessClassifier()
 impact_analyzer = ImpactAnalyzer(repository=repo, classifier=classifier)
+test_suite_store = get_test_suite_store()
+qa_service = QAGenerationService(
+    repository=repo,
+    store=test_suite_store,
+    classifier=classifier,
+)
 
 MANUAL_VERSIONS = {
     "v1": settings.v1_manual_path,
@@ -891,4 +914,198 @@ def get_document_impact_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Stage 5 Endpoints: Grounded QA Test Generation, Retrieval & Staleness
+# ---------------------------------------------------------------------------
+
+@app.post(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}/test-suites",
+    response_model=GeneratedTestSuitePayload,
+    status_code=status.HTTP_201_CREATED,
+    tags=["QA Test Generation"],
+    summary="Generate 3-5 grounded QA test cases from a version-pinned selection",
+)
+def generate_selection_test_suites_endpoint(
+    selection_id: str,
+    req: GenerateTestSuiteRequest = GenerateTestSuiteRequest(),
+    db: Session = Depends(get_db),
+) -> GeneratedTestSuitePayload:
+    """Generate, strictly validate, and persist QA test cases from a pinned selection."""
+    try:
+        return qa_service.generate_test_suite(
+            db=db,
+            selection_id=selection_id,
+            requested_count=req.count,
+            idempotency_key=req.idempotency_key,
+            focus_topic=req.test_type_focus,
+        )
+    except IdempotencyConflictError as ice:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(ice))
+    except ValueError as val_err:
+        err_msg = str(val_err)
+        if "not found" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+    except LLMConfigurationError as cfg_err:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(cfg_err))
+    except GenerationValidationError as gve:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(gve))
+    except LLMTransientError as te:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(te))
+    except LLMProviderError as pe:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(pe))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.post(
+    f"{settings.api_v1_prefix}/nodes/{{node_version_id}}/test-suites",
+    response_model=GeneratedTestSuitePayload,
+    status_code=status.HTTP_201_CREATED,
+    tags=["QA Test Generation"],
+    summary="Generate 3-5 grounded QA test cases from an individual node version",
+)
+def generate_node_test_suites_endpoint(
+    node_version_id: str,
+    req: GenerateTestSuiteRequest = GenerateTestSuiteRequest(),
+    db: Session = Depends(get_db),
+) -> GeneratedTestSuitePayload:
+    """Generate, strictly validate, and persist QA test cases from an individual node snapshot."""
+    try:
+        return qa_service.generate_test_suite(
+            db=db,
+            node_version_id=node_version_id,
+            requested_count=req.count,
+            idempotency_key=req.idempotency_key,
+            focus_topic=req.test_type_focus,
+        )
+    except IdempotencyConflictError as ice:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(ice))
+    except ValueError as val_err:
+        err_msg = str(val_err)
+        if "not found" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+    except LLMConfigurationError as cfg_err:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(cfg_err))
+    except GenerationValidationError as gve:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(gve))
+    except LLMTransientError as te:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(te))
+    except LLMProviderError as pe:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(pe))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/test-suites/{{generation_id}}",
+    response_model=GeneratedTestSuitePayload,
+    tags=["QA Test Generation"],
+    summary="Retrieve a generated test suite and individual test cases by generation ID",
+)
+def get_test_suite_endpoint(generation_id: str) -> GeneratedTestSuitePayload:
+    """Retrieve persisted test suite with complete source provenance and test case schemas."""
+    suite = qa_service.store.get_test_suite(generation_id)
+    if not suite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Generated test suite with ID '{generation_id}' not found in document store.",
+        )
+    return suite
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}/test-suites",
+    response_model=List[GeneratedTestSuitePayload],
+    tags=["QA Test Generation"],
+    summary="List all generated test suites for a selection",
+)
+def list_selection_test_suites_endpoint(
+    selection_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Max test suites to return"),
+    db: Session = Depends(get_db),
+) -> List[GeneratedTestSuitePayload]:
+    """Retrieve all test suites generated from the specified selection."""
+    sel = repo.get_selection(db, selection_id)
+    if not sel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Selection with ID '{selection_id}' not found.",
+        )
+    return qa_service.store.list_test_suites(selection_id=selection_id, limit=limit)
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/nodes/{{node_version_id}}/test-suites",
+    response_model=List[GeneratedTestSuitePayload],
+    tags=["QA Test Generation"],
+    summary="List all test suites referencing an exact source node snapshot",
+)
+def list_node_test_suites_endpoint(
+    node_version_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Max test suites to return"),
+    db: Session = Depends(get_db),
+) -> List[GeneratedTestSuitePayload]:
+    """Retrieve all test suites containing test cases bound to the specified node version."""
+    nv = repo.get_node_version(db, node_version_id)
+    if not nv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node version with ID '{node_version_id}' not found.",
+        )
+    return qa_service.store.list_test_suites(node_version_id=node_version_id, limit=limit)
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/test-suites/{{generation_id}}/staleness",
+    response_model=TestSuiteStalenessResponse,
+    tags=["QA Test Staleness & Impact"],
+    summary="Evaluate test suite staleness against a target document version",
+)
+def get_test_suite_staleness_endpoint(
+    generation_id: str,
+    target_version: str = Query("v2", description="Target version label (e.g. 'v2')"),
+    db: Session = Depends(get_db),
+) -> TestSuiteStalenessResponse:
+    """Assess whether generated test cases are stale relative to target version without mutating original provenance."""
+    try:
+        return qa_service.evaluate_test_suite_staleness(
+            db=db,
+            generation_id=generation_id,
+            target_version_label=target_version,
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/documents/{{document_id}}/test-suite-impact",
+    response_model=DocumentTestSuiteImpactResponse,
+    tags=["QA Test Staleness & Impact"],
+    summary="Document-wide impact analysis across all generated test suites",
+)
+def get_document_test_suite_impact_endpoint(
+    document_id: str,
+    from_version: str = Query("v1", description="Baseline version (e.g. 'v1')"),
+    to_version: str = Query("v2", description="Target version (e.g. 'v2')"),
+    db: Session = Depends(get_db),
+) -> DocumentTestSuiteImpactResponse:
+    """Evaluate document-wide revision impact across all test suites generated for from_version."""
+    try:
+        return qa_service.analyze_document_test_suite_impact(
+            db=db,
+            document_id=document_id,
+            from_version_label=from_version,
+            to_version_label=to_version,
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
 
