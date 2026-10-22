@@ -6,7 +6,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.db.models import Document, DocumentVersion, LogicalNode, NodeVersion
+from app.db.models import (
+    Document,
+    DocumentVersion,
+    LogicalNode,
+    NodeVersion,
+    Selection,
+    SelectionNode,
+)
 
 
 class DocumentRepository:
@@ -162,3 +169,182 @@ class DocumentRepository:
     def get_logical_node(self, db: Session, logical_node_id: str) -> Optional[LogicalNode]:
         """Fetch logical node by ID."""
         return db.get(LogicalNode, logical_node_id)
+
+    # -----------------------------------------------------------------------
+    # Selection Repository Methods
+    # -----------------------------------------------------------------------
+
+    def create_selection(
+        self,
+        db: Session,
+        document_id: str,
+        document_version_id: str,
+        name: str,
+        description: Optional[str] = None,
+        node_version_ids: Optional[List[str]] = None,
+        metadata_json: Optional[str] = None,
+    ) -> Selection:
+        """Create a version-pinned named selection validating node references."""
+        if not node_version_ids:
+            raise ValueError("Selection creation requires a non-empty list of node_version_ids.")
+
+        # Deduplicate node_version_ids preserving order
+        seen = set()
+        deduped_node_ids = []
+        for nid in node_version_ids:
+            if nid not in seen:
+                seen.add(nid)
+                deduped_node_ids.append(nid)
+
+        # Validate that all nodes exist and belong strictly to this document_version_id and document_id
+        stmt = select(NodeVersion).where(NodeVersion.id.in_(deduped_node_ids))
+        nodes = list(db.execute(stmt).scalars().all())
+        found_map = {n.id: n for n in nodes}
+
+        missing_ids = [nid for nid in deduped_node_ids if nid not in found_map]
+        if missing_ids:
+            raise ValueError(f"Unknown node_version_ids: {missing_ids}")
+
+        for nid, node in found_map.items():
+            if node.document_version_id != document_version_id:
+                raise ValueError(
+                    f"NodeVersion '{nid}' belongs to version '{node.document_version_id}', "
+                    f"not pinned version '{document_version_id}'. Mixed-version selections are forbidden."
+                )
+
+        selection = Selection(
+            document_id=document_id,
+            document_version_id=document_version_id,
+            name=name,
+            description=description,
+            metadata_json=metadata_json,
+        )
+        db.add(selection)
+        db.flush()
+
+        for idx, nid in enumerate(deduped_node_ids):
+            sn = SelectionNode(
+                selection_id=selection.id,
+                node_version_id=nid,
+                order_index=idx,
+            )
+            selection.selection_nodes.append(sn)
+
+        db.flush()
+        return self.get_selection(db, selection.id)  # type: ignore
+
+    def get_selection(self, db: Session, selection_id: str) -> Optional[Selection]:
+        """Fetch selection by ID with document, document_version, and selection_nodes loaded."""
+        stmt = (
+            select(Selection)
+            .options(
+                joinedload(Selection.document),
+                joinedload(Selection.document_version),
+                joinedload(Selection.selection_nodes).joinedload(SelectionNode.node_version).joinedload(NodeVersion.logical_node),
+            )
+            .where(Selection.id == selection_id)
+        )
+        return db.execute(stmt).unique().scalar_one_or_none()
+
+    def list_selections(
+        self,
+        db: Session,
+        document_id: Optional[str] = None,
+        version_label: Optional[str] = None,
+    ) -> List[Selection]:
+        """List selections with optional document and version filtering."""
+        stmt = (
+            select(Selection)
+            .join(DocumentVersion, Selection.document_version_id == DocumentVersion.id)
+            .options(
+                joinedload(Selection.document_version),
+                joinedload(Selection.selection_nodes),
+            )
+        )
+        filters = []
+        if document_id:
+            filters.append(Selection.document_id == document_id)
+        if version_label:
+            filters.append(DocumentVersion.version_label == version_label)
+
+        if filters:
+            stmt = stmt.where(*filters)
+
+        stmt = stmt.order_by(Selection.created_at.desc())
+        return list(db.execute(stmt).unique().scalars().all())
+
+    def update_selection(
+        self,
+        db: Session,
+        selection: Selection,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        node_version_ids: Optional[List[str]] = None,
+        metadata_json: Optional[str] = None,
+    ) -> Selection:
+        """Update selection metadata or nodes within the same pinned document version."""
+        if name is not None:
+            selection.name = name
+        if description is not None:
+            selection.description = description
+        if metadata_json is not None:
+            selection.metadata_json = metadata_json
+
+        if node_version_ids is not None:
+            # Deduplicate preserving order
+            seen = set()
+            deduped_ids = []
+            for nid in node_version_ids:
+                if nid not in seen:
+                    seen.add(nid)
+                    deduped_ids.append(nid)
+
+            if deduped_ids:
+                stmt = select(NodeVersion).where(NodeVersion.id.in_(deduped_ids))
+                nodes = list(db.execute(stmt).scalars().all())
+                found_map = {n.id: n for n in nodes}
+                missing_ids = [nid for nid in deduped_ids if nid not in found_map]
+                if missing_ids:
+                    raise ValueError(f"Unknown node_version_ids: {missing_ids}")
+
+                for nid, node in found_map.items():
+                    if node.document_version_id != selection.document_version_id:
+                        raise ValueError(
+                            f"Node '{nid}' belongs to version '{node.document_version_id}', "
+                            f"not selection's pinned version '{selection.document_version_id}'."
+                        )
+
+            # Clear existing selection nodes
+            selection.selection_nodes.clear()
+            db.flush()
+
+            for idx, nid in enumerate(deduped_ids):
+                sn = SelectionNode(
+                    selection_id=selection.id,
+                    node_version_id=nid,
+                    order_index=idx,
+                )
+                selection.selection_nodes.append(sn)
+
+        selection.updated_at = datetime.now(timezone.utc)
+        db.flush()
+        return self.get_selection(db, selection.id)  # type: ignore
+
+    def delete_selection(self, db: Session, selection: Selection) -> None:
+        """Delete a selection and its membership links without affecting document versions or nodes."""
+        db.delete(selection)
+        db.flush()
+
+    def get_selections_for_version(
+        self, db: Session, document_version_id: str
+    ) -> List[Selection]:
+        """Fetch all selections pinned to a specific document version."""
+        stmt = (
+            select(Selection)
+            .options(
+                joinedload(Selection.selection_nodes).joinedload(SelectionNode.node_version),
+            )
+            .where(Selection.document_version_id == document_version_id)
+            .order_by(Selection.created_at)
+        )
+        return list(db.execute(stmt).unique().scalars().all())

@@ -68,6 +68,11 @@ class Document(Base):
         foreign_keys=[latest_version_id],
         post_update=True,
     )
+    selections: Mapped[List[Selection]] = relationship(
+        "Selection",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
 
 
 class DocumentVersion(Base):
@@ -204,35 +209,51 @@ class NodeVersion(Base):
 
 
 class Selection(Base):
-    """Version-pinned named selection for QA generation."""
+    """Version-pinned named selection for QA generation and audit tracing."""
 
     __tablename__ = "selections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    document_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     document_version_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("document_versions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     # Relationships
+    document: Mapped[Document] = relationship("Document", back_populates="selections")
     document_version: Mapped[DocumentVersion] = relationship("DocumentVersion", back_populates="selections")
     selection_nodes: Mapped[List[SelectionNode]] = relationship(
         "SelectionNode",
         back_populates="selection",
         cascade="all, delete-orphan",
+        order_by="SelectionNode.order_index",
     )
 
 
 class SelectionNode(Base):
-    """Association table linking a selection to a specific NodeVersion."""
+    """Association table linking a selection to a specific immutable NodeVersion snapshot."""
 
     __tablename__ = "selection_nodes"
 
@@ -248,6 +269,12 @@ class SelectionNode(Base):
         ForeignKey("node_versions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     __table_args__ = (
