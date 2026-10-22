@@ -60,3 +60,6 @@ data/*.pdf
 scratch/
 tmp/
 *.log
+
+# Generated test suites store
+data/test_suites/
