@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     base_dir: Path = Path(__file__).resolve().parent.parent.parent
     data_dir: Path = base_dir / "data"
 
+    # Database
+    database_url: str = "sqlite:///./tri9t_documents.db"
+    default_document_key: str = "CT-200"
+
     # Known document manuals
     v1_manual_filename: str = "ct200_manual.pdf"
     v2_manual_filename: str = "ct200_manual_v2.pdf"
