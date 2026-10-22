@@ -20,13 +20,23 @@ from app.core.config import settings
 from app.db.session import get_db, init_db
 from app.repositories.document_repository import DocumentRepository
 from app.schemas.api import (
+    DetectedValueDeltaSchema,
+    DocumentImpactSummary,
     DocumentSummaryResponse,
     DocumentVersionSummary,
     NodeChangeComparisonResponse,
     NodeDetailResponse,
+    NodeStalenessReport,
     SearchHit,
     SearchResponse,
     SectionItem,
+    SelectionCreateRequest,
+    SelectionDetailResponse,
+    SelectionImpactResponse,
+    SelectionNodeDetail,
+    SelectionStalenessResponse,
+    SelectionSummaryItem,
+    SelectionUpdateRequest,
     VersionNodeSnapshotResponse,
 )
 from app.schemas.document import DocumentTree
@@ -35,13 +45,18 @@ from app.services.document_ingestion import (
     IngestionConflictError,
     IngestionResult,
 )
+from app.services.impact_analyzer import DocumentImpactReport, ImpactAnalyzer, SelectionImpactReport
 from app.services.pdf_parser import CT200PDFParser
+from app.services.staleness_classifier import (
+    SelectionStalenessResult,
+    StalenessClassifier,
+)
 from app.services.version_matcher import ChangeClassification
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
-    description="Document Intelligence & Lineage API for CT-200 Blood Pressure Monitor Manuals",
+    version="0.4.0",
+    description="Document Intelligence, Lineage & Staleness API for CT-200 Blood Pressure Monitor Manuals",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -59,6 +74,8 @@ app.add_middleware(
 parser = CT200PDFParser()
 repo = DocumentRepository()
 ingestion_service = DocumentIngestionService(repository=repo, parser=parser)
+classifier = StalenessClassifier()
+impact_analyzer = ImpactAnalyzer(repository=repo, classifier=classifier)
 
 MANUAL_VERSIONS = {
     "v1": settings.v1_manual_path,
@@ -496,3 +513,382 @@ def compare_node_versions(
         matching_confidence=1.0,
         notes=notes,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 Endpoints: Selections, Staleness, and Impact Detection
+# ---------------------------------------------------------------------------
+
+def _build_selection_detail_response(sel) -> SelectionDetailResponse:
+    """Helper to convert a Selection entity into SelectionDetailResponse."""
+    node_details = []
+    for sn in sel.selection_nodes:
+        nv = sn.node_version
+        if nv:
+            node_details.append(
+                SelectionNodeDetail(
+                    node_version_id=nv.id,
+                    logical_node_id=nv.logical_node_id,
+                    section_number=nv.section_number,
+                    heading=nv.heading,
+                    level=nv.level,
+                    content_hash=nv.content_hash,
+                    page_start=nv.page_start,
+                    page_end=nv.page_end,
+                    source_order=nv.source_order,
+                )
+            )
+    return SelectionDetailResponse(
+        id=sel.id,
+        document_id=sel.document_id,
+        document_version_id=sel.document_version_id,
+        version_label=sel.document_version.version_label if sel.document_version else "unknown",
+        name=sel.name,
+        description=sel.description,
+        created_at=sel.created_at,
+        updated_at=sel.updated_at,
+        total_nodes=len(node_details),
+        nodes=node_details,
+        metadata_json=sel.metadata_json,
+    )
+
+
+def _to_node_staleness_report(a) -> NodeStalenessReport:
+    """Helper to map NodeStalenessAssessment dataclass to Pydantic NodeStalenessReport."""
+    deltas = [
+        DetectedValueDeltaSchema(
+            delta_type=d.delta_type,
+            old_value=d.old_value,
+            new_value=d.new_value,
+            unit=d.unit,
+            context=d.context,
+            explanation=d.explanation,
+        )
+        for d in a.deltas
+    ]
+    return NodeStalenessReport(
+        node_version_id=a.node_version_id,
+        logical_node_id=a.logical_node_id,
+        section_number=a.section_number,
+        heading=a.heading,
+        from_version_label=a.from_version_label,
+        to_version_label=a.to_version_label,
+        status=a.status.value if hasattr(a.status, "value") else str(a.status),
+        classification=a.classification.value if hasattr(a.classification, "value") else str(a.classification),
+        from_content_hash=a.from_content_hash,
+        to_content_hash=a.to_content_hash,
+        target_node_version_id=a.target_node_version_id,
+        target_section_number=a.target_section_number,
+        target_heading=a.target_heading,
+        deltas=deltas,
+        diff_summary=a.diff_summary,
+        explanation=a.explanation,
+        human_review_required=a.human_review_required,
+        evidence_level=a.evidence_level,
+    )
+
+
+def _to_selection_impact_response(r: SelectionImpactReport) -> SelectionImpactResponse:
+    """Helper to map SelectionImpactReport dataclass to Pydantic SelectionImpactResponse."""
+    return SelectionImpactResponse(
+        selection_id=r.selection_id,
+        selection_name=r.selection_name,
+        pinned_version_label=r.pinned_version_label,
+        target_version_label=r.target_version_label,
+        aggregate_status=r.aggregate_status.value if hasattr(r.aggregate_status, "value") else str(r.aggregate_status),
+        human_review_required=r.human_review_required,
+        disclaimer=r.disclaimer,
+        affected_nodes_count=r.affected_nodes_count,
+        unaffected_nodes_count=r.unaffected_nodes_count,
+        affected_nodes=[_to_node_staleness_report(a) for a in r.affected_nodes],
+        unaffected_nodes=[_to_node_staleness_report(u) for u in r.unaffected_nodes],
+        explanation=r.explanation,
+    )
+
+
+@app.post(
+    f"{settings.api_v1_prefix}/selections",
+    response_model=SelectionDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Selections"],
+    summary="Create a named, version-pinned selection",
+)
+def create_selection_endpoint(
+    req: SelectionCreateRequest,
+    db: Session = Depends(get_db),
+) -> SelectionDetailResponse:
+    """Create a named selection of nodes pinned to an exact immutable document version."""
+    # Resolve document_id and document_version_id
+    doc_id = req.document_id
+    doc_version_id = req.document_version_id
+
+    if doc_version_id:
+        doc_version = repo.get_document_version(db, doc_version_id)
+        if not doc_version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"DocumentVersion with ID '{doc_version_id}' not found.",
+            )
+        doc_id = doc_version.document_id
+    elif doc_id and req.version_label:
+        doc_version = repo.get_version_by_label(db, document_id=doc_id, version_label=req.version_label)
+        if not doc_version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Version '{req.version_label}' not found for document '{doc_id}'.",
+            )
+        doc_version_id = doc_version.id
+    elif req.version_label:
+        docs = repo.list_documents(db)
+        if not docs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No documents found in database. Ingest manuals before creating selections.",
+            )
+        doc = docs[0]
+        doc_id = doc.id
+        doc_version = repo.get_version_by_label(db, document_id=doc.id, version_label=req.version_label)
+        if not doc_version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Version '{req.version_label}' not found for document '{doc.id}'.",
+            )
+        doc_version_id = doc_version.id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide either 'document_version_id' or 'version_label' (with optional 'document_id').",
+        )
+
+    try:
+        selection = repo.create_selection(
+            db=db,
+            document_id=doc_id,  # type: ignore
+            document_version_id=doc_version_id,  # type: ignore
+            name=req.name,
+            description=req.description,
+            node_version_ids=req.node_version_ids,
+            metadata_json=req.metadata_json,
+        )
+        db.commit()
+        return _build_selection_detail_response(selection)
+    except ValueError as val_err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/selections",
+    response_model=List[SelectionSummaryItem],
+    tags=["Selections"],
+    summary="List named selections",
+)
+def list_selections_endpoint(
+    document_id: Optional[str] = Query(None, description="Filter by document ID"),
+    version: Optional[str] = Query(None, description="Filter by pinned version label ('v1', 'v2')"),
+    db: Session = Depends(get_db),
+) -> List[SelectionSummaryItem]:
+    """List all created selections with optional document and version filtering."""
+    selections = repo.list_selections(db, document_id=document_id, version_label=version)
+    results = []
+    for s in selections:
+        results.append(
+            SelectionSummaryItem(
+                id=s.id,
+                document_id=s.document_id,
+                document_version_id=s.document_version_id,
+                version_label=s.document_version.version_label if s.document_version else "unknown",
+                name=s.name,
+                description=s.description,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+                total_nodes=len(s.selection_nodes),
+            )
+        )
+    return results
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}",
+    response_model=SelectionDetailResponse,
+    tags=["Selections"],
+    summary="Retrieve selection details and pinned nodes",
+)
+def get_selection_endpoint(
+    selection_id: str,
+    db: Session = Depends(get_db),
+) -> SelectionDetailResponse:
+    """Retrieve full details of a version-pinned selection including all selected node snapshots."""
+    sel = repo.get_selection(db, selection_id)
+    if not sel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Selection with ID '{selection_id}' not found.",
+        )
+    return _build_selection_detail_response(sel)
+
+
+@app.patch(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}",
+    response_model=SelectionDetailResponse,
+    tags=["Selections"],
+    summary="Update selection metadata or node membership",
+)
+def update_selection_endpoint(
+    selection_id: str,
+    req: SelectionUpdateRequest,
+    db: Session = Depends(get_db),
+) -> SelectionDetailResponse:
+    """Update selection name, description, or nodes within the same pinned document version."""
+    sel = repo.get_selection(db, selection_id)
+    if not sel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Selection with ID '{selection_id}' not found.",
+        )
+
+    try:
+        updated = repo.update_selection(
+            db=db,
+            selection=sel,
+            name=req.name,
+            description=req.description,
+            node_version_ids=req.node_version_ids,
+            metadata_json=req.metadata_json,
+        )
+        db.commit()
+        return _build_selection_detail_response(updated)
+    except ValueError as val_err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.delete(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}",
+    tags=["Selections"],
+    summary="Delete a selection",
+)
+def delete_selection_endpoint(
+    selection_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Delete a selection and its membership links without affecting document versions or nodes."""
+    sel = repo.get_selection(db, selection_id)
+    if not sel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Selection with ID '{selection_id}' not found.",
+        )
+    repo.delete_selection(db, sel)
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Selection '{selection_id}' successfully deleted.",
+    }
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}/staleness",
+    response_model=SelectionStalenessResponse,
+    tags=["Staleness & Impact"],
+    summary="Evaluate staleness of a pinned selection against a target version",
+)
+def get_selection_staleness_endpoint(
+    selection_id: str,
+    target_version: str = Query("v2", description="Target version label to evaluate against (e.g. 'v2')"),
+    db: Session = Depends(get_db),
+) -> SelectionStalenessResponse:
+    """Assess whether sections in a pinned selection are stale relative to target version."""
+    try:
+        res: SelectionStalenessResult = classifier.evaluate_selection_staleness(
+            db=db,
+            repository=repo,
+            selection_id=selection_id,
+            target_version_label=target_version,
+        )
+        return SelectionStalenessResponse(
+            selection_id=res.selection_id,
+            selection_name=res.selection_name,
+            pinned_version_label=res.pinned_version_label,
+            target_version_label=res.target_version_label,
+            aggregate_status=res.aggregate_status.value,
+            summary=res.summary_counts,
+            human_review_required=res.human_review_required,
+            disclaimer=res.disclaimer,
+            node_assessments=[_to_node_staleness_report(a) for a in res.node_assessments],
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/selections/{{selection_id}}/impact",
+    response_model=SelectionImpactResponse,
+    tags=["Staleness & Impact"],
+    summary="Generate explainable impact report for an individual selection",
+)
+def get_selection_impact_endpoint(
+    selection_id: str,
+    target_version: str = Query("v2", description="Target version label to evaluate against (e.g. 'v2')"),
+    db: Session = Depends(get_db),
+) -> SelectionImpactResponse:
+    """Analyze which nodes in a selection are affected, removed, moved, or ambiguous in target version."""
+    try:
+        report: SelectionImpactReport = impact_analyzer.analyze_selection_impact(
+            db=db,
+            selection_id=selection_id,
+            target_version_label=target_version,
+        )
+        return _to_selection_impact_response(report)
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/documents/{{document_id}}/impact",
+    response_model=DocumentImpactSummary,
+    tags=["Staleness & Impact"],
+    summary="Document-wide impact report across all pinned selections",
+)
+def get_document_impact_endpoint(
+    document_id: str,
+    from_version: str = Query("v1", description="Baseline version (e.g. 'v1')"),
+    to_version: str = Query("v2", description="Target version (e.g. 'v2')"),
+    db: Session = Depends(get_db),
+) -> DocumentImpactSummary:
+    """Evaluate document-wide revision impact across all selections pinned to from_version."""
+    try:
+        report: DocumentImpactReport = impact_analyzer.analyze_document_impact(
+            db=db,
+            document_id=document_id,
+            from_version_label=from_version,
+            to_version_label=to_version,
+        )
+        return DocumentImpactSummary(
+            document_id=report.document_id,
+            from_version=report.from_version,
+            to_version=report.to_version,
+            total_selections_evaluated=report.total_selections_evaluated,
+            impacted_selections_count=report.impacted_selections_count,
+            review_required_selections_count=report.review_required_selections_count,
+            current_selections_count=report.current_selections_count,
+            human_review_required=report.human_review_required,
+            disclaimer=report.disclaimer,
+            affected_selections=[_to_selection_impact_response(s) for s in report.affected_selections],
+            unaffected_selections=[_to_selection_impact_response(s) for s in report.unaffected_selections],
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
