@@ -6,7 +6,7 @@ Developed for the **Tri9T AI Internship Assignment**.
 
 ---
 
-## Current Status: Milestone M5 (Stage 6 Complete — Submission Ready)
+## Current Status: Stage 7 Complete — Reviewer-Level Validation & Submission Hardened
 
 - **Stage 1 (Audit & Inspection):** Complete — documented in [`docs/stage-1-analysis.md`](docs/stage-1-analysis.md).
 - **Stage 2 (PDF Extraction & Deterministic Engine):** Complete — documented in [`docs/stage-2-parser.md`](docs/stage-2-parser.md).
@@ -14,8 +14,10 @@ Developed for the **Tri9T AI Internship Assignment**.
 - **Stage 4 (Version-Pinned Selections, Staleness & Impact Detection):** Complete — documented in [`docs/stage-4-selections-staleness.md`](docs/stage-4-selections-staleness.md).
 - **Stage 5 (Grounded QA Generation, Validation, Provenance & Test Staleness):** Complete — documented in [`docs/stage-5-qa-generation.md`](docs/stage-5-qa-generation.md).
 - **Stage 6 (Final Integration, Grounding Audit & Acceptance):** Complete — documented in [`docs/final-acceptance-report.md`](docs/final-acceptance-report.md), [`docs/stage-6-audit-plan.md`](docs/stage-6-audit-plan.md), and [`docs/api-reference.md`](docs/api-reference.md).
-- **Automated Test Suite:** **76/76 tests passing** across PDF parsing, 7 structural edge cases, relational persistence, version lineage matching, named selections, staleness classification, LLM provider abstraction, strict Pydantic validation, idempotency, atomic document store, cross-version test staleness, and deterministic source-grounding audit.
-- **Final End-to-End Acceptance Demo:** **14/14 milestones passing** via `python3 -m scripts.final_acceptance_demo`.
+- **Stage 7 (Reviewer-Level Hardening, Red-Teaming & Grounding Audit):** Complete — documented in [`docs/stage-7-final-report.md`](docs/stage-7-final-report.md), [`docs/stage-7-grounding-red-team.md`](docs/stage-7-grounding-red-team.md), [`docs/stage-7-versioning-audit.md`](docs/stage-7-versioning-audit.md), [`docs/stage-7-generation-and-persistence-audit.md`](docs/stage-7-generation-and-persistence-audit.md), [`docs/stage-7-api-security-review.md`](docs/stage-7-api-security-review.md), [`docs/stage-7-baseline-audit.md`](docs/stage-7-baseline-audit.md), and [`docs/stage-7-reproducibility-report.md`](docs/stage-7-reproducibility-report.md).
+- **Automated Test Suite:** **90/90 tests passing** across 10 test modules, including 14 dedicated adversarial red-team test cases.
+- **Single-Command Verification Runner:** `python3 -m scripts.stage7_final_verification` (runs pytest, 14-milestone acceptance demo, red-team checks, and OpenAPI validation in one pass).
+- **Final End-to-End Acceptance Demo:** **14/14 milestones passing** via `python3 -m scripts.final_acceptance_demo` (auditing 33 claims across all 5 grounding states).
 
 ---
 
@@ -153,9 +155,20 @@ Tri9T-AI/
 │   ├── stage-2-parser.md           # Stage 2 parser architecture and edge case handling
 │   ├── stage-3-versioning.md       # Stage 3 relational schema, lineage matching & API reference
 │   ├── stage-4-selections-staleness.md # Stage 4 selections, staleness classification & impact analysis
-│   └── stage-5-qa-generation.md    # Stage 5 QA generation, validation, persistence & test staleness
+│   ├── stage-5-qa-generation.md    # Stage 5 QA generation, validation, persistence & test staleness
+│   ├── final-acceptance-report.md  # Stage 6 integration and acceptance report
+│   ├── api-reference.md            # Complete API endpoints and schemas reference
+│   ├── stage-7-baseline-audit.md   # Stage 7 real baseline verification audit
+│   ├── stage-7-grounding-red-team.md # Stage 7 adversarial red-team test report
+│   ├── stage-7-versioning-audit.md # Stage 7 versioning, immutability & staleness audit
+│   ├── stage-7-generation-and-persistence-audit.md # Stage 7 QA generation & persistence audit
+│   ├── stage-7-api-security-review.md # Stage 7 API contract & security review
+│   ├── stage-7-reproducibility-report.md # Stage 7 clean-environment reproducibility report
+│   └── stage-7-final-report.md     # Stage 7 final reviewer acceptance & verification report
 ├── scripts/
 │   ├── __init__.py
+│   ├── stage7_final_verification.py# Single-command verification runner for reviewers
+│   ├── run_acceptance_demo.py      # 14-milestone acceptance demo script
 │   ├── demo_e2e_qa_generation.py   # Stage 5 13-step QA generation and test staleness demonstration
 │   ├── demo_e2e_staleness.py       # Stage 4 11-step selection staleness & impact demonstration
 │   ├── demo_e2e_versioning.py      # Stage 3 end-to-end versioning demonstration script
@@ -164,9 +177,12 @@ Tri9T-AI/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_api.py                 # Base API endpoint tests
+│   ├── test_grounding_audit.py     # Deterministic grounding auditor tests
+│   ├── test_grounding_red_team.py  # 14 dedicated adversarial red-team grounding tests
 │   ├── test_impact_and_selection_api.py # Selection CRUD, staleness, and impact API integration tests
 │   ├── test_parser_edge_cases.py   # Dedicated tests for all 7 confirmed structural edge cases
 │   ├── test_pdf_parser.py          # Core parser extraction and table tests
+│   ├── test_persistence.py         # Atomic JSON and MongoDB document store tests
 │   ├── test_qa_generation.py       # Stage 5 QA generation, schemas, providers, retries & staleness tests
 │   ├── test_selections.py          # Selection models, repository methods, and immutability tests
 │   ├── test_staleness_classifier.py# Unit tests for staleness rules, deltas, and precedence
@@ -193,25 +209,22 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the Full Automated Test Suite (76 Tests)
-Executes all regression tests for Stages 2 through 6 (PDF extraction, edge cases, versioning, selections, staleness classifier, QA generation, and grounding audit):
+### 2. Single-Command Reviewer Verification (Recommended)
+Executes all Stage 7 verification checks in one pass (Full Pytest suite, 14-milestone acceptance demo, red-team test suite, and OpenAPI validation):
+```bash
+python3 -m scripts.stage7_final_verification
+```
+
+### 3. Run the Full Automated Test Suite (90 Tests)
+Executes all regression and adversarial tests across all 10 test modules:
 ```bash
 pytest -v
 ```
 
-### 3. Run the Stage 6 Final Acceptance Demonstration (Recommended for Reviewers)
-Executes the comprehensive 14-step workflow on authentic CT-200 v1/v2 PDFs in isolated, disposable storage:
+### 4. Run the 14-Milestone Acceptance Demo Directly
+Executes the comprehensive 14-milestone workflow on authentic CT-200 v1/v2 PDFs in isolated, disposable storage:
 ```bash
-python3 -m scripts.final_acceptance_demo
-```
-
-### 4. Optional: Run Prior Stage Demonstration Scripts
-```bash
-# Stage 5 QA Generation & Staleness Demo:
-python3 -m scripts.demo_e2e_qa_generation
-
-# Stage 4 Selection & Impact Demo:
-python3 -m scripts.demo_e2e_staleness
+python3 -m scripts.run_acceptance_demo
 ```
 
 ### 5. Launch the FastAPI Server

@@ -24,6 +24,11 @@ from app.schemas.qa_test_case import (
     TestCaseSchema,
 )
 
+AUDIT_DISCLAIMER = (
+    "Deterministic grounding verification assesses syntactic, numerical, and tabular alignment "
+    "against immutable source snapshots. It does not replace human clinical review or formal verification."
+)
+
 # Common lab test equipment / fixture keywords that represent proposed setups rather than manual specs
 PROPOSED_SETUP_PATTERNS = [
     r"\[proposed setup\]",
@@ -40,15 +45,55 @@ PROPOSED_SETUP_PATTERNS = [
     r"artificial (?:limb|arm)",
     r"programmable",
     r"simulator",
+    r"decay",
+    r"pneumatic",
+    r"calibrated",
+]
+
+# Patterns for negative claims that contradict required source behavior
+NEGATION_PATTERNS = [
+    r"\b(?:does\s+not|do\s+not|will\s+not|fails?\s+to|cannot|never)\s+(?:display|alert|auto-deflate|deflate|operate|show|indicate)\b",
+    r"\bno\s+(?:alert|warning|error|icon|deflation)\s+is\s+(?:displayed|shown|triggered|initiated)\b",
 ]
 
 # Regular expressions for extracting numerical values with optional units
 NUMERIC_PATTERN = re.compile(
-    r"\b(\d+(?:\.\d+)?)\s*(?:(?:measurement|inflation|pressure|operating|target)\s+)?(mmHg|%|seconds?|sec|s|cycles?|bpm|v|dc|cm|°c|c)\b",
+    r"\b(\d+(?:\.\d+)?)\s*(?:(?:measurement|inflation|pressure|operating|target)\s+)?(mmHg|%|seconds?|sec|secs|s|cycles?|bpm|v\s*dc|vdc|v|dc|cm|°c|c|minutes?|min)(?![a-zA-Z0-9])",
     re.IGNORECASE,
 )
 ERROR_CODE_PATTERN = re.compile(r"\b(E\d+)\b")
-TOLERANCE_PATTERN = re.compile(r"([±\+\-]\s*\d+(?:\.\d+)?\s*(?:mmHg|%|bpm|s))", re.IGNORECASE)
+TOLERANCE_PATTERN = re.compile(r"([±\+\-]\s*\d+(?:\.\d+)?\s*(?:mmHg|%|bpm|s|seconds?|sec))", re.IGNORECASE)
+
+
+def normalize_unit(unit: str) -> str:
+    """Normalize equivalent engineering units and time notations."""
+    u = unit.lower().strip()
+    if u in ["s", "sec", "secs", "second", "seconds"]:
+        return "s"
+    if u in ["min", "minute", "minutes"]:
+        return "min"
+    if u in ["cycle", "cycles"]:
+        return "cycles"
+    if u in ["mmhg"]:
+        return "mmhg"
+    if u in ["%", "percent"]:
+        return "%"
+    if u in ["bpm"]:
+        return "bpm"
+    if u in ["v", "volt", "volts", "v dc", "vdc", "dc"]:
+        return "v"
+    if u in ["cm"]:
+        return "cm"
+    if u in ["°c", "c"]:
+        return "°c"
+    return u
+
+
+def format_canonical_number(val_str: str) -> Tuple[float, str, str]:
+    """Return numeric float value and formatted string variants (e.g. 2.0 -> 2.0 and '2')."""
+    f = float(val_str)
+    as_int_str = str(int(f)) if f.is_integer() else val_str
+    return f, as_int_str, f"{f:.1f}"
 
 
 class GroundingAuditor:
@@ -58,8 +103,10 @@ class GroundingAuditor:
         pass
 
     @staticmethod
-    def _extract_source_text_and_tables(node: NodeVersion) -> Tuple[str, List[Dict[str, Any]], Set[str], Set[str]]:
-        """Extract full searchable text, tables, error codes, and numbers with units from source node."""
+    def _extract_source_text_and_tables(
+        node: NodeVersion,
+    ) -> Tuple[str, List[Dict[str, Any]], Set[str], Set[float], Set[str]]:
+        """Extract full searchable text, tables, error codes, and normalized numbers from source node."""
         body = (node.body_text or "").lower()
         heading = (node.heading or "").lower()
         full_text = f"{heading}\n{body}"
@@ -79,21 +126,25 @@ class GroundingAuditor:
 
         combined_text = (full_text + " " + table_text).lower()
 
-        # Extract all numbers and units present in source
-        source_nums = set()
+        source_num_units: Set[str] = set()
+        source_floats: Set[float] = set()
+
         for val, unit in NUMERIC_PATTERN.findall(combined_text):
-            norm_unit = unit.lower().rstrip("s")
-            source_nums.add(f"{val} {norm_unit}")
-            source_nums.add(val)
+            norm_u = normalize_unit(unit)
+            f_val, int_str, float_str = format_canonical_number(val)
+            source_floats.add(f_val)
+            source_num_units.add(f"{int_str} {norm_u}")
+            source_num_units.add(f"{float_str} {norm_u}")
 
         # Also extract all pure numbers from source text
         for val in re.findall(r"\b\d+(?:\.\d+)?\b", combined_text):
-            source_nums.add(val)
+            f_val, int_str, float_str = format_canonical_number(val)
+            source_floats.add(f_val)
 
         # Extract all error codes in source
         source_error_codes = set(ERROR_CODE_PATTERN.findall(combined_text.upper()))
 
-        return combined_text, tables, source_nums, source_error_codes
+        return combined_text, tables, source_num_units, source_floats, source_error_codes
 
     def audit_test_case(
         self,
@@ -104,14 +155,62 @@ class GroundingAuditor:
         claims: List[AuditedClaim] = []
         findings: List[str] = []
 
-        # 1. Identify primary supporting node
+        # 1. Audit Provenance Integrity
         primary_node = source_nodes[0]
-        if test_case.Provenance:
-            matched = [n for n in source_nodes if n.id == test_case.Provenance.source_node_version_id]
+        if test_case.Provenance is None:
+            claims.append(
+                AuditedClaim(
+                    claim_text="Provenance Binding",
+                    field_name="Provenance",
+                    category=ClaimCategory.UNSUPPORTED,
+                    explanation="Missing cryptographic provenance binding. Test case cannot be traced to any immutable source snapshot.",
+                    requires_human_review=True,
+                )
+            )
+            findings.append("Missing provenance: Test case is not cryptographically bound to a source node snapshot.")
+        else:
+            prov = test_case.Provenance
+            matched = [n for n in source_nodes if n.id == prov.source_node_version_id]
             if matched:
                 primary_node = matched[0]
+                # Check content hash drift
+                if prov.source_content_hash != primary_node.content_hash:
+                    claims.append(
+                        AuditedClaim(
+                            claim_text=f"Content Hash: {prov.source_content_hash[:12]}...",
+                            field_name="Provenance",
+                            category=ClaimCategory.UNSUPPORTED,
+                            evidence=f"Expected hash: {primary_node.content_hash[:12]}...",
+                            explanation="Cryptographic content hash mismatch. Provenance drift detected against source snapshot.",
+                            requires_human_review=True,
+                        )
+                    )
+                    findings.append("Provenance hash drift: Recorded hash does not match current source snapshot hash.")
+                else:
+                    claims.append(
+                        AuditedClaim(
+                            claim_text=f"Provenance Node {primary_node.section_number or primary_node.id[:8]}",
+                            field_name="Provenance",
+                            category=ClaimCategory.SOURCE_SUPPORTED,
+                            evidence=f"Matched node {primary_node.id} (hash: {primary_node.content_hash[:12]}...)",
+                            explanation="Cryptographic provenance matches exact immutable source node snapshot.",
+                        )
+                    )
+            else:
+                claims.append(
+                    AuditedClaim(
+                        claim_text=f"Node Version ID: {prov.source_node_version_id}",
+                        field_name="Provenance",
+                        category=ClaimCategory.AMBIGUOUS,
+                        explanation="Provenance references a node version UUID not present in available document snapshots.",
+                        requires_human_review=True,
+                    )
+                )
+                findings.append("Unresolvable provenance node UUID.")
 
-        source_text, tables, source_nums, source_error_codes = self._extract_source_text_and_tables(primary_node)
+        source_text, tables, source_num_units, source_floats, source_error_codes = (
+            self._extract_source_text_and_tables(primary_node)
+        )
 
         # 2. Audit StandardRef & Section Citation
         ref = test_case.StandardRef.strip()
@@ -198,28 +297,47 @@ class GroundingAuditor:
                         )
                     )
                 else:
+                    # Unrecognized condition that is not labeled as a proposed fixture
                     claims.append(
                         AuditedClaim(
                             claim_text=prereq,
                             field_name="Prerequisites",
-                            category=ClaimCategory.PROPOSED_SETUP,
-                            explanation="Operational setup condition proposed for test execution.",
-                            requires_human_review=False,
+                            category=ClaimCategory.UNSUPPORTED,
+                            explanation="Prerequisite introduces unverified environmental/equipment condition not found in manual specifications.",
+                            requires_human_review=True,
                         )
                     )
+                    findings.append(f"Unverified prerequisite condition: '{prereq}'.")
 
         # 4. Audit ExpectedResult and PassFailCriteria Claims
         for field_name in ["ExpectedResult", "PassFailCriteria"]:
             field_val = getattr(test_case, field_name, "")
             field_val_lower = field_val.lower()
 
+            # Check for contradictory negative assertions
+            for neg_pat in NEGATION_PATTERNS:
+                if re.search(neg_pat, field_val_lower):
+                    claims.append(
+                        AuditedClaim(
+                            claim_text=f"Negative assertion in {field_name}",
+                            field_name=field_name,
+                            category=ClaimCategory.UNSUPPORTED,
+                            explanation="Assertion negates mandatory device operation or safety response specified in manual.",
+                            requires_human_review=True,
+                        )
+                    )
+                    findings.append(f"Contradictory negative assertion detected in {field_name}.")
+
             # Check numerical claims
             for num_val, unit in NUMERIC_PATTERN.findall(field_val):
-                norm_unit = unit.lower().rstrip("s")
-                matched_val = f"{num_val} {norm_unit}"
+                norm_u = normalize_unit(unit)
+                f_val, int_str, float_str = format_canonical_number(num_val)
 
-                # Check if present in source
-                if matched_val in source_nums or num_val in source_nums:
+                key_int = f"{int_str} {norm_u}"
+                key_float = f"{float_str} {norm_u}"
+
+                # Check exact number+unit match
+                if key_int in source_num_units or key_float in source_num_units:
                     claims.append(
                         AuditedClaim(
                             claim_text=f"{num_val} {unit}",
@@ -229,41 +347,72 @@ class GroundingAuditor:
                             explanation=f"Numerical parameter {num_val} {unit} verified against source manual.",
                         )
                     )
+                # Check pure number presence with compatible unit
+                elif f_val in source_floats and norm_u in ["s", "cycles", "mmhg", "%", "v", "cm", "°c", "bpm"]:
+                    claims.append(
+                        AuditedClaim(
+                            claim_text=f"{num_val} {unit}",
+                            field_name=field_name,
+                            category=ClaimCategory.SOURCE_SUPPORTED,
+                            evidence=f"Numeric value {f_val} verified in Section {sec_num}.",
+                            explanation=f"Numerical value {num_val} verified against source manual.",
+                        )
+                    )
                 else:
                     # Check derivation
                     is_derived = False
-                    if sec_num == "3.2" and num_val in ["220", "260"]:  # 180 + 40, etc.
-                        is_derived = True
-                        claims.append(
-                            AuditedClaim(
-                                claim_text=f"{num_val} {unit}",
-                                field_name=field_name,
-                                category=ClaimCategory.DERIVED_WITH_EXPLANATION,
-                                evidence="180 mmHg + 40 mmHg increment progression",
-                                explanation=f"Derived step progression ({num_val} mmHg) based on 40 mmHg increments.",
+                    # Derivation rule for Section 3.2 Cuff Inflation:
+                    # In v1 (increment 40 mmHg): 180 + 40 = 220, 180 + 80 = 260
+                    # In v2 (increment 30 mmHg): 180 + 30 = 210, 180 + 60 = 240, 180 + 90 = 270
+                    if sec_num == "3.2":
+                        is_v1 = "40 mmhg" in source_num_units or 40.0 in source_floats
+                        is_v2 = "30 mmhg" in source_num_units or 30.0 in source_floats
+
+                        if is_v1 and int_str in ["220", "260"]:
+                            is_derived = True
+                            claims.append(
+                                AuditedClaim(
+                                    claim_text=f"{num_val} {unit}",
+                                    field_name=field_name,
+                                    category=ClaimCategory.DERIVED_WITH_EXPLANATION,
+                                    evidence="180 mmHg base target + 40 mmHg step increment progression (v1)",
+                                    explanation=f"Derived step progression ({num_val} mmHg) based on 40 mmHg increments up to 299 mmHg ceiling.",
+                                )
                             )
-                        )
+                        elif is_v2 and int_str in ["210", "240", "270"]:
+                            is_derived = True
+                            claims.append(
+                                AuditedClaim(
+                                    claim_text=f"{num_val} {unit}",
+                                    field_name=field_name,
+                                    category=ClaimCategory.DERIVED_WITH_EXPLANATION,
+                                    evidence="180 mmHg base target + 30 mmHg step increment progression (v2)",
+                                    explanation=f"Derived step progression ({num_val} mmHg) based on 30 mmHg increments up to 299 mmHg ceiling.",
+                                )
+                            )
+
                     if not is_derived:
                         claims.append(
                             AuditedClaim(
                                 claim_text=f"{num_val} {unit}",
                                 field_name=field_name,
                                 category=ClaimCategory.UNSUPPORTED,
-                                explanation=f"Numerical value {num_val} {unit} not found in Section {sec_num} or related tables.",
+                                explanation=f"Numerical parameter {num_val} {unit} not established in Section {sec_num} or related tables.",
                                 requires_human_review=True,
                             )
                         )
-                        findings.append(f"Unsupported numerical value {num_val} {unit} in {field_name}.")
+                        findings.append(f"Unsupported numerical parameter {num_val} {unit} in {field_name}.")
 
             # Check for unsupported tolerances (e.g. ±2 mmHg)
             for tol in TOLERANCE_PATTERN.findall(field_val):
-                if tol.replace(" ", "") not in source_text.replace(" ", ""):
+                clean_tol = tol.replace(" ", "")
+                if clean_tol not in source_text.replace(" ", ""):
                     claims.append(
                         AuditedClaim(
                             claim_text=tol,
                             field_name=field_name,
                             category=ClaimCategory.UNSUPPORTED,
-                            explanation=f"Tolerance limit '{tol}' is not established in manual (Section 2.1 specifies ±3 mmHg accuracy).",
+                            explanation=f"Tolerance limit '{tol}' is not established in manual (Section 2.1 specifies ±3 mmHg sensor accuracy).",
                             requires_human_review=True,
                         )
                     )
@@ -287,7 +436,7 @@ class GroundingAuditor:
                             claim_text=err_code,
                             field_name=field_name,
                             category=ClaimCategory.UNSUPPORTED,
-                            explanation=f"Error code {err_code} is not documented in cited source.",
+                            explanation=f"Error code {err_code} is not documented in cited source table.",
                             requires_human_review=True,
                         )
                     )
