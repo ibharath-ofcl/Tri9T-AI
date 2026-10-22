@@ -6,14 +6,16 @@ Developed for the **Tri9T AI Internship Assignment**.
 
 ---
 
-## Current Status: Milestone M4 (Stage 5 Complete)
+## Current Status: Milestone M5 (Stage 6 Complete — Submission Ready)
 
 - **Stage 1 (Audit & Inspection):** Complete — documented in [`docs/stage-1-analysis.md`](docs/stage-1-analysis.md).
 - **Stage 2 (PDF Extraction & Deterministic Engine):** Complete — documented in [`docs/stage-2-parser.md`](docs/stage-2-parser.md).
 - **Stage 3 (Relational Versioning, Database & Lineage):** Complete — documented in [`docs/stage-3-versioning.md`](docs/stage-3-versioning.md).
 - **Stage 4 (Version-Pinned Selections, Staleness & Impact Detection):** Complete — documented in [`docs/stage-4-selections-staleness.md`](docs/stage-4-selections-staleness.md).
 - **Stage 5 (Grounded QA Generation, Validation, Provenance & Test Staleness):** Complete — documented in [`docs/stage-5-qa-generation.md`](docs/stage-5-qa-generation.md).
-- **Automated Test Suite:** **67/67 tests passing** across PDF parsing, 7 structural edge cases, relational persistence, version lineage matching, named selections, staleness classification, LLM provider abstraction, strict Pydantic validation, idempotency, atomic document store, and cross-version test-case staleness.
+- **Stage 6 (Final Integration, Grounding Audit & Acceptance):** Complete — documented in [`docs/final-acceptance-report.md`](docs/final-acceptance-report.md), [`docs/stage-6-audit-plan.md`](docs/stage-6-audit-plan.md), and [`docs/api-reference.md`](docs/api-reference.md).
+- **Automated Test Suite:** **76/76 tests passing** across PDF parsing, 7 structural edge cases, relational persistence, version lineage matching, named selections, staleness classification, LLM provider abstraction, strict Pydantic validation, idempotency, atomic document store, cross-version test staleness, and deterministic source-grounding audit.
+- **Final End-to-End Acceptance Demo:** **14/14 milestones passing** via `python3 -m scripts.final_acceptance_demo`.
 
 ---
 
@@ -63,6 +65,16 @@ Developed for the **Tri9T AI Internship Assignment**.
 - **Atomic Document Store:** Concurrency-safe local JSON document store (`JsonTestSuiteStore`) with temporary write replacement, advisory file locking, and corrupted file safety.
 - **Cryptographic Provenance:** Binds exact source snapshot UUIDs, content hashes, and version labels directly to each test case.
 - **Cross-Version Test Case Staleness:** Audits generated test suites against target document revisions (`v2`) without mutating original `v1` provenance.
+
+### 7. Deterministic Source-Grounding Audit Engine (`app/services/grounding_auditor.py`)
+- **Five-Category Claim Classification:** Evaluates every assertion, parameter, unit, and test fixture into:
+  1. `SOURCE_SUPPORTED`: Explicitly present in cited source text or tables.
+  2. `DERIVED_WITH_EXPLANATION`: Logically derived step progressions (e.g. $180 + 40 = 220\text{ mmHg}$).
+  3. `PROPOSED_SETUP`: Engineering test bench fixtures or lab equipment tagged `[PROPOSED SETUP]` (not claimed as product specs).
+  4. `UNSUPPORTED`: Ungrounded parameters, invented tolerances ($\pm 2$ mmHg), or unlisted error codes. Automatically flags `human_review_required = True`.
+  5. `AMBIGUOUS`: Insufficient or conflicting source evidence.
+- **StandardRef Citation Verification:** Validates that citations point to real sections and rejects fabricated external standards.
+- **Suite-Level Aggregation:** Computes audit metrics and propagates human review flags to the suite payload.
 
 ---
 
@@ -181,20 +193,24 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the Automated Test Suite (67 Tests)
-Executes all regression tests for Stage 2, 3, 4, and 5:
+### 2. Run the Full Automated Test Suite (76 Tests)
+Executes all regression tests for Stages 2 through 6 (PDF extraction, edge cases, versioning, selections, staleness classifier, QA generation, and grounding audit):
 ```bash
-pytest
+pytest -v
 ```
 
-### 3. Run the Stage 5 End-to-End Demonstration Script
-Demonstrates v1 ingestion, selection creation, grounded QA generation, duplicate request handling, v2 ingestion, numerical/timing staleness detection, and provenance immutability:
+### 3. Run the Stage 6 Final Acceptance Demonstration (Recommended for Reviewers)
+Executes the comprehensive 14-step workflow on authentic CT-200 v1/v2 PDFs in isolated, disposable storage:
 ```bash
+python3 -m scripts.final_acceptance_demo
+```
+
+### 4. Optional: Run Prior Stage Demonstration Scripts
+```bash
+# Stage 5 QA Generation & Staleness Demo:
 python3 -m scripts.demo_e2e_qa_generation
-```
 
-### 4. Run the Stage 4 Selection & Staleness Demo Script
-```bash
+# Stage 4 Selection & Impact Demo:
 python3 -m scripts.demo_e2e_staleness
 ```
 
@@ -203,4 +219,5 @@ python3 -m scripts.demo_e2e_staleness
 uvicorn app.main:app --reload --port 8000
 ```
 - **Interactive Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - **Health Telemetry:** [http://localhost:8000/health](http://localhost:8000/health)
