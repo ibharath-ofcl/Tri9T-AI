@@ -6,13 +6,14 @@ Developed for the **Tri9T AI Internship Assignment**.
 
 ---
 
-## Current Status: Milestone M3 (Stage 4 Complete)
+## Current Status: Milestone M4 (Stage 5 Complete)
 
 - **Stage 1 (Audit & Inspection):** Complete — documented in [`docs/stage-1-analysis.md`](docs/stage-1-analysis.md).
 - **Stage 2 (PDF Extraction & Deterministic Engine):** Complete — documented in [`docs/stage-2-parser.md`](docs/stage-2-parser.md).
 - **Stage 3 (Relational Versioning, Database & Lineage):** Complete — documented in [`docs/stage-3-versioning.md`](docs/stage-3-versioning.md).
 - **Stage 4 (Version-Pinned Selections, Staleness & Impact Detection):** Complete — documented in [`docs/stage-4-selections-staleness.md`](docs/stage-4-selections-staleness.md).
-- **Automated Test Suite:** **52/52 tests passing** across PDF parsing, 7 structural edge cases, relational persistence, version lineage matching, named selections, staleness rules, and REST APIs.
+- **Stage 5 (Grounded QA Generation, Validation, Provenance & Test Staleness):** Complete — documented in [`docs/stage-5-qa-generation.md`](docs/stage-5-qa-generation.md).
+- **Automated Test Suite:** **67/67 tests passing** across PDF parsing, 7 structural edge cases, relational persistence, version lineage matching, named selections, staleness classification, LLM provider abstraction, strict Pydantic validation, idempotency, atomic document store, and cross-version test-case staleness.
 
 ---
 
@@ -54,9 +55,14 @@ Developed for the **Tri9T AI Internship Assignment**.
   - §4.3: Error code range `E1-E5` $\rightarrow$ `E1-E6`.
 - **Medical Risk Policy:** Any detected numerical or temporal shift flags `human_review_required: true`. Disclaimers included on every response.
 
-### 6. Revision Impact Analysis (`app/services/impact_analyzer.py`)
-- **Selection-Centric Impact:** Evaluates an individual pinned selection against target version v2, reporting affected nodes and deltas.
-- **Document-Centric Impact:** Evaluates all selections across the entire document, partitioning them into impacted, review-required, and unaffected categories.
+### 6. Grounded QA Test Generation & LLM Provider Abstraction (`app/services/qa_generation_service.py`, `app/services/llm_provider.py`)
+- **Pluggable Architecture:** Configurable between `MockLLMProvider` (zero external calls, repeatable test suites) and `OpenAICompatibleProvider` (exponential backoff on 429/5xx).
+- **Strict Pydantic Output Validation:** Enforces exact PascalCase contract (`TestCaseId`, `Title`, `Prerequisites`, `Steps`, `ExpectedResult`, `PassFailCriteria`, `StandardRef`).
+- **Bounded Validation Retries:** Maximum 3 total model attempts. Corrective feedback prompts guide the model to fix formatting or count discrepancies.
+- **Deterministic Request Idempotency:** SHA-256 fingerprinting prevents duplicate executions on identical parameters while returning `HTTP 409 Conflict` on parameter mismatches.
+- **Atomic Document Store:** Concurrency-safe local JSON document store (`JsonTestSuiteStore`) with temporary write replacement, advisory file locking, and corrupted file safety.
+- **Cryptographic Provenance:** Binds exact source snapshot UUIDs, content hashes, and version labels directly to each test case.
+- **Cross-Version Test Case Staleness:** Audits generated test suites against target document revisions (`v2`) without mutating original `v1` provenance.
 
 ---
 
@@ -78,6 +84,13 @@ Developed for the **Tri9T AI Internship Assignment**.
 | `GET` | `/api/v1/selections/{selection_id}/staleness?target_version=v2` | Assess selection staleness with parameter deltas. |
 | `GET` | `/api/v1/selections/{selection_id}/impact?target_version=v2` | Partition selection nodes into affected and unaffected sets. |
 | `GET` | `/api/v1/documents/{document_id}/impact?from_version=v1&to_version=v2` | Document-wide impact analysis across all pinned selections. |
+| `POST` | `/api/v1/selections/{selection_id}/test-suites` | Generate 3–5 grounded QA test cases from a version-pinned selection. |
+| `POST` | `/api/v1/nodes/{node_version_id}/test-suites` | Generate 3–5 grounded QA test cases from an individual node version. |
+| `GET` | `/api/v1/test-suites/{generation_id}` | Retrieve persisted test suite and test cases by generation ID. |
+| `GET` | `/api/v1/selections/{selection_id}/test-suites` | List all generated test suites for a selection. |
+| `GET` | `/api/v1/nodes/{node_version_id}/test-suites` | List all test suites referencing an exact source node snapshot. |
+| `GET` | `/api/v1/test-suites/{generation_id}/staleness?target_version=v2` | Evaluate test suite staleness against target document revision. |
+| `GET` | `/api/v1/documents/{document_id}/test-suite-impact?from_version=v1&to_version=v2` | Document-wide test-suite impact across all generated suites. |
 
 ---
 
@@ -87,27 +100,36 @@ Developed for the **Tri9T AI Internship Assignment**.
 Tri9T-AI/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                     # FastAPI application with persistence, search, diff, selections & impact
+│   ├── main.py                     # FastAPI application with persistence, search, diff, selections & QA generation
 │   ├── core/
 │   │   ├── __init__.py
-│   │   └── config.py               # Application settings and database URLs
+│   │   └── config.py               # Application settings, LLM provider & store configuration
 │   ├── db/
 │   │   ├── __init__.py
 │   │   ├── base.py                 # SQLAlchemy DeclarativeBase
 │   │   ├── models.py               # Models: Document, DocumentVersion, LogicalNode, NodeVersion, Selection, SelectionNode
 │   │   └── session.py              # Engine, sessionmaker, and SQLite FK pragma
+│   ├── prompts/
+│   │   ├── __init__.py
+│   │   └── qa_generation.py        # System instructions, injection defense boundary, and prompt templates
 │   ├── repositories/
 │   │   ├── __init__.py
-│   │   └── document_repository.py  # Data access layer for documents, versions, nodes, search & selections
+│   │   ├── document_repository.py  # Data access layer for relational document snapshots & selections
+│   │   ├── json_test_suite_store.py# Atomic filesystem document store with flock concurrency
+│   │   ├── mongo_test_suite_store.py# Decoupled MongoDB document store integration
+│   │   └── test_suite_store.py     # Document store abstraction and factory
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── api.py                  # Pydantic schemas for API requests, responses, staleness & impact
-│   │   └── document.py             # Pydantic schemas for extracted document trees
+│   │   ├── document.py             # Pydantic schemas for extracted document trees
+│   │   └── qa_test_case.py         # Strict Pydantic models for QA test cases, suites & provenance
 │   └── services/
 │       ├── __init__.py
 │       ├── document_ingestion.py   # Atomic transactional ingestion service
 │       ├── impact_analyzer.py      # Selection-centric and document-wide impact analysis engine
+│       ├── llm_provider.py         # BaseLLMProvider, OpenAICompatibleProvider, and MockLLMProvider
 │       ├── pdf_parser.py           # Core deterministic PDF hierarchy extraction engine
+│       ├── qa_generation_service.py# Grounded QA test case generation, validation retry loop & staleness
 │       ├── staleness_classifier.py # Rule-based explainable staleness classification engine
 │       └── version_matcher.py      # Multi-signal cross-version lineage matching engine
 ├── data/
@@ -118,10 +140,12 @@ Tri9T-AI/
 │   ├── stage-1-analysis.md         # Stage 1 repository audit and dataset analysis
 │   ├── stage-2-parser.md           # Stage 2 parser architecture and edge case handling
 │   ├── stage-3-versioning.md       # Stage 3 relational schema, lineage matching & API reference
-│   └── stage-4-selections-staleness.md # Stage 4 selections, staleness classification & impact analysis
+│   ├── stage-4-selections-staleness.md # Stage 4 selections, staleness classification & impact analysis
+│   └── stage-5-qa-generation.md    # Stage 5 QA generation, validation, persistence & test staleness
 ├── scripts/
 │   ├── __init__.py
-│   ├── demo_e2e_staleness.py       # Automated 11-step Stage 4 staleness & impact demonstration
+│   ├── demo_e2e_qa_generation.py   # Stage 5 13-step QA generation and test staleness demonstration
+│   ├── demo_e2e_staleness.py       # Stage 4 11-step selection staleness & impact demonstration
 │   ├── demo_e2e_versioning.py      # Stage 3 end-to-end versioning demonstration script
 │   ├── ingest_document.py          # CLI tool for ingesting manuals and viewing version summaries
 │   └── inspect_manual.py           # Standalone PDF diagnostic inspector
@@ -131,6 +155,7 @@ Tri9T-AI/
 │   ├── test_impact_and_selection_api.py # Selection CRUD, staleness, and impact API integration tests
 │   ├── test_parser_edge_cases.py   # Dedicated tests for all 7 confirmed structural edge cases
 │   ├── test_pdf_parser.py          # Core parser extraction and table tests
+│   ├── test_qa_generation.py       # Stage 5 QA generation, schemas, providers, retries & staleness tests
 │   ├── test_selections.py          # Selection models, repository methods, and immutability tests
 │   ├── test_staleness_classifier.py# Unit tests for staleness rules, deltas, and precedence
 │   ├── test_versioning_and_ingestion.py # DB schema, ingestion, idempotency & lineage tests
@@ -156,29 +181,26 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the Stage 4 End-to-End Demonstration Script
-Demonstrates v1 ingestion, selection creation, v2 migration, numerical/timing delta detection, unchanged selection verification, and document-wide impact analysis:
-```bash
-python3 -m scripts.demo_e2e_staleness
-```
-
-### 3. Run the Automated Test Suite (52 Tests)
+### 2. Run the Automated Test Suite (67 Tests)
+Executes all regression tests for Stage 2, 3, 4, and 5:
 ```bash
 pytest
 ```
 
-### 4. Launch the FastAPI Server
+### 3. Run the Stage 5 End-to-End Demonstration Script
+Demonstrates v1 ingestion, selection creation, grounded QA generation, duplicate request handling, v2 ingestion, numerical/timing staleness detection, and provenance immutability:
+```bash
+python3 -m scripts.demo_e2e_qa_generation
+```
+
+### 4. Run the Stage 4 Selection & Staleness Demo Script
+```bash
+python3 -m scripts.demo_e2e_staleness
+```
+
+### 5. Launch the FastAPI Server
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 - **Interactive Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Health Telemetry:** [http://localhost:8000/health](http://localhost:8000/health)
-
----
-
-## Upcoming Stage 5 Scope
-
-- **Validated LLM QA Generation:** Generating 3–5 structured test-case specifications per node/selection.
-- **Pydantic Structured Output Validation:** Enforcing strict schema compliance with bounded retries.
-- **Document Store Persistence:** MongoDB or structured JSON persistence linking generated test cases directly to immutable source node hashes.
-- **Cross-Version Test Staleness:** Automatically retrieving and flagging stale test cases when underlying requirements change.
