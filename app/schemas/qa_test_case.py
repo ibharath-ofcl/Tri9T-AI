@@ -28,6 +28,52 @@ class TestCaseType(str, Enum):
     TIMING = "timing"
 
 
+class ClaimCategory(str, Enum):
+    """Grounding audit classification for generated test case claims."""
+    SOURCE_SUPPORTED = "SOURCE_SUPPORTED"
+    DERIVED_WITH_EXPLANATION = "DERIVED_WITH_EXPLANATION"
+    PROPOSED_SETUP = "PROPOSED_SETUP"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class AuditedClaim(BaseModel):
+    """An individual assertion or requirement extracted from a generated test case."""
+    claim_text: str = Field(..., description="The specific assertion, threshold, or setup step")
+    field_name: str = Field(..., description="Field containing the claim (e.g. ExpectedResult, PassFailCriteria)")
+    category: ClaimCategory = Field(..., description="Source support classification")
+    evidence: Optional[str] = Field(None, description="Supporting excerpt from the manual or derivation rationale")
+    explanation: str = Field(..., description="Audit determination details")
+    requires_human_review: bool = Field(default=False, description="Whether claim requires engineering verification")
+
+
+class TestCaseGroundingAudit(BaseModel):
+    """Deterministic source-grounding audit result for an individual test case."""
+    test_case_id: str
+    overall_grounding_status: str = Field(..., description="GROUNDED, PROPOSED_SETUP_PRESENT, UNSUPPORTED_CLAIMS, or REQUIRES_REVIEW")
+    claims_count: int
+    source_supported_count: int
+    derived_count: int
+    proposed_setup_count: int
+    unsupported_count: int
+    ambiguous_count: int
+    human_review_required: bool
+    audited_claims: List[AuditedClaim] = Field(default_factory=list)
+    findings: List[str] = Field(default_factory=list)
+
+
+class SuiteGroundingSummary(BaseModel):
+    """Aggregated source-grounding audit summary across an entire generated suite."""
+    total_claims_audited: int
+    source_supported_claims: int
+    derived_claims: int
+    proposed_setup_claims: int
+    unsupported_claims: int
+    ambiguous_claims: int
+    human_review_required: bool
+    case_grounding_reports: List[TestCaseGroundingAudit] = Field(default_factory=list)
+
+
 class TestCaseProvenance(BaseModel):
     """Cryptographic provenance linking a test case to an immutable source snapshot."""
     selection_id: Optional[str] = Field(None, description="Parent selection UUID if generated from selection")
@@ -58,6 +104,7 @@ class TestCaseSchema(BaseModel):
     HumanReviewRequired: bool = Field(default=False, description="Flag indicating human QA review is required")
     ValidationWarnings: List[str] = Field(default_factory=list, description="Non-fatal warnings or grounded ambiguities")
     Provenance: Optional[TestCaseProvenance] = Field(None, description="Exact source provenance snapshot binding")
+    GroundingAudit: Optional[TestCaseGroundingAudit] = Field(None, description="Deterministic source grounding verification")
 
     @field_validator("TestCaseId", "Title", "ExpectedResult", "PassFailCriteria", "StandardRef")
     @classmethod
@@ -101,6 +148,7 @@ class GeneratedTestSuitePayload(BaseModel):
     test_cases: List[TestCaseSchema]
     source_node_version_ids: List[str] = Field(default_factory=list)
     source_content_hashes: Dict[str, str] = Field(default_factory=dict)
+    grounding_summary: Optional[SuiteGroundingSummary] = Field(None, description="Deterministic source grounding audit across all test cases")
 
     @model_validator(mode="after")
     def validate_test_cases_integrity(self) -> GeneratedTestSuitePayload:
