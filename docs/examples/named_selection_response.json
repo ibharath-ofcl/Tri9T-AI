@@ -1,0 +1,47 @@
+{
+  "id": "b7f5a653-f728-4ef6-81cf-67f0b5d564fa",
+  "document_id": "c0fcd1e6-a7f5-4b25-838e-9dab60f8853a",
+  "document_version_id": "a327ba00-843a-4467-bc32-1b1e427142b7",
+  "version_label": "v1",
+  "name": "CT200-Core-Safety-Critical-Suite",
+  "description": "High-risk safety requirements: battery capacity, inflation pressure, error deflation.",
+  "created_at": "2026-10-23T01:00:00Z",
+  "updated_at": "2026-10-23T01:00:00Z",
+  "total_nodes": 3,
+  "nodes": [
+    {
+      "node_version_id": "a2aec38a-cf21-4f08-b196-857c3da89ff0",
+      "logical_node_id": "5cc13d3b-9a48-4cb4-a3f4-d57a44a67812",
+      "section_number": "2.1.1.1",
+      "heading": "2.1.1.1 Battery Life Under Typical Use",
+      "level": 3,
+      "content_hash": "dec9f4eebc56542fba7b1652410a562ef616f7284b553655b3992ea6da7da197",
+      "page_start": 2,
+      "page_end": 2,
+      "source_order": 4
+    },
+    {
+      "node_version_id": "2a25c9aa-062e-4cb8-8f85-30bb622f9889",
+      "logical_node_id": "238c0086-a212-4eb2-a634-11cb4ff0a324",
+      "section_number": "3.2",
+      "heading": "3.2 Cuff Inflation Sequence",
+      "level": 2,
+      "content_hash": "547758b53703d0eb6d6d7c71baeb3fa36ef8be308c962b8e3a2c070c73e86c07",
+      "page_start": 3,
+      "page_end": 3,
+      "source_order": 8
+    },
+    {
+      "node_version_id": "4dcdb9c2-5e67-4288-a764-f98b18ec4920",
+      "logical_node_id": "8ad036df-b9a1-4328-971c-43df890a56fe",
+      "section_number": "4.2",
+      "heading": "4.2 Error Codes",
+      "level": 2,
+      "content_hash": "96be26dc07b58c1ea817cfaee1a7a0b329c2ea55811c79a970e5b745ce9b61d2",
+      "page_start": 4,
+      "page_end": 4,
+      "source_order": 12
+    }
+  ],
+  "metadata_json": "{\"target_qa_discipline\": \"verification\", \"safety_integrity_level\": \"medium\"}"
+}

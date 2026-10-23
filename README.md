@@ -1,205 +1,242 @@
-# Tri9T-AI: CT-200 Medical Device Document Intelligence
+# CardioTrack CT-200 Medical Device Document Intelligence & QA Generation Engine
 
-A high-reliability Document Intelligence, Document Versioning, and Medical Device QA Traceability Engine built for the CardioTrack CT-200 Blood Pressure Monitor technical manuals.
+A high-reliability Document Intelligence, Relational Versioning, and Automated QA Traceability Engine built for the CardioTrack CT-200 Blood Pressure Monitor technical manuals.
 
 Developed for the **Tri9T AI Internship Assignment**.
 
 ---
 
-## Current Status: Stage 7 Complete — Reviewer-Level Validation & Submission Hardened
+## 1. Project Overview
 
-- **Stage 1 (Audit & Inspection):** Complete — documented in [`docs/stage-1-analysis.md`](docs/stage-1-analysis.md).
-- **Stage 2 (PDF Extraction & Deterministic Engine):** Complete — documented in [`docs/stage-2-parser.md`](docs/stage-2-parser.md).
-- **Stage 3 (Relational Versioning, Database & Lineage):** Complete — documented in [`docs/stage-3-versioning.md`](docs/stage-3-versioning.md).
-- **Stage 4 (Version-Pinned Selections, Staleness & Impact Detection):** Complete — documented in [`docs/stage-4-selections-staleness.md`](docs/stage-4-selections-staleness.md).
-- **Stage 5 (Grounded QA Generation, Validation, Provenance & Test Staleness):** Complete — documented in [`docs/stage-5-qa-generation.md`](docs/stage-5-qa-generation.md).
-- **Stage 6 (Final Integration, Grounding Audit & Acceptance):** Complete — documented in [`docs/final-acceptance-report.md`](docs/final-acceptance-report.md), [`docs/stage-6-audit-plan.md`](docs/stage-6-audit-plan.md), and [`docs/api-reference.md`](docs/api-reference.md).
-- **Stage 7 (Reviewer-Level Hardening, Red-Teaming & Grounding Audit):** Complete — documented in [`docs/stage-7-final-report.md`](docs/stage-7-final-report.md), [`docs/stage-7-grounding-red-team.md`](docs/stage-7-grounding-red-team.md), [`docs/stage-7-versioning-audit.md`](docs/stage-7-versioning-audit.md), [`docs/stage-7-generation-and-persistence-audit.md`](docs/stage-7-generation-and-persistence-audit.md), [`docs/stage-7-api-security-review.md`](docs/stage-7-api-security-review.md), [`docs/stage-7-baseline-audit.md`](docs/stage-7-baseline-audit.md), and [`docs/stage-7-reproducibility-report.md`](docs/stage-7-reproducibility-report.md).
-- **Automated Test Suite:** **90/90 tests passing** across 10 test modules, including 14 dedicated adversarial red-team test cases.
-- **Single-Command Verification Runner:** `python3 -m scripts.stage7_final_verification` (runs pytest, 14-milestone acceptance demo, red-team checks, and OpenAPI validation in one pass).
-- **Final End-to-End Acceptance Demo:** **14/14 milestones passing** via `python3 -m scripts.final_acceptance_demo` (auditing 33 claims across all 5 grounding states).
+The CardioTrack CT-200 system transforms complex, unstructured medical device PDF manuals into structured, queryable, and version-tracked technical intelligence. It automatically extracts document hierarchies, tracks cross-version requirement drifts, generates structured QA test cases, and deterministically audits generated assertions against authoritative manual text.
+
+- **Current Status:** Submission Ready (Stages 1–8 Complete)
+- **Automated Test Suite:** **90 tests passing (100% pass rate)** across 10 test modules
+- **Single-Command Reviewer Verification:** `python3 -m scripts.stage7_final_verification`
+- **Interactive Evaluator Walkthrough:** `python3 -m scripts.evaluator_demo`
+- **Offline Capable:** 100% functional without external network access, API keys, or cloud databases.
 
 ---
 
-## Key Features Implemented
+## 2. Problem Statement
+
+Medical device software verification requires strict traceability between product specifications and QA test cases. However, technical manuals present severe engineering hurdles:
+1. **Unstructured PDFs & Edge Cases:** Non-standard typography, missing parent headers (e.g. §2.1.1.1 jumping directly from §2.1), body-sized headings, duplicate section titles, and split tables.
+2. **Silent Specification Drift:** Revisions modify safety-critical values (battery cycles, alarm thresholds, inflation step sizes) without unified changelogs.
+3. **Stochastic LLM Hallucinations:** Using generative AI to draft test cases frequently invents unsupported tolerances (e.g. `±2 mmHg`), fabricated error codes, or wrong units.
+4. **Unpinned Test Suites:** Test suites become invalid when documents change unless tied to immutable source snapshots.
+
+---
+
+## 3. Proposed Solution
+
+This engine implements an end-to-end, deterministic engineering pipeline:
+
+```
+PDF Manuals (v1 & v2)
+       │
+       ▼
+Deterministic PDF Parsing (pdfplumber typography extraction, IR-1 through IR-7 handling)
+       │
+       ▼
+Immutable Versioned Relational Model (SQLite: Document, Version, LogicalNode, NodeVersion)
+       │
+       ▼
+Cross-Version Change Detection (SHA-256 content hashing, multi-signal lineage matching)
+       │
+       ▼
+Version-Pinned Named Selections (User-curated requirement subsets pinned to immutable snapshots)
+       │
+       ▼
+Structured QA Test Generation (Configurable LLM provider: MockLLMProvider or remote OpenAI)
+       │
+       ▼
+Deterministic Source-Grounding Audit (5-state claim evaluation: Supported, Derived, Setup, Unsupported, Ambiguous)
+       │
+       ▼
+Dual Persistence & Retrieval (Relational SQLite lineage + Atomic JSON document store with flock)
+       │
+       ▼
+Cross-Version Staleness & Impact Analysis (Automated flagging of modified requirements & deltas)
+```
+
+---
+
+## 4. Key Features
 
 ### 1. Deterministic PDF Extraction Engine (`app/services/pdf_parser.py`)
-- High-fidelity typography extraction using `pdfplumber`.
-- Multi-pass line aggregation with character-level font metadata (`size`, `fontname`, `bold`).
-- Clean digital PDF parsing without lossy OCR overhead or stochastic LLM hallucination.
+- High-fidelity typography extraction using `pdfplumber` character geometry.
+- Handles all **7 confirmed structural irregularities**:
+  - **IR-1 (Missing Parent):** Section `2.1.1.1` cleanly attached to `2.1` with diagnostic warning.
+  - **IR-2 (Body-Sized Headings):** Section `3.2` recognized as Level-2 heading despite 11pt font.
+  - **IR-3 (Out-of-Order Headings):** Sections `3.4` and `3.3` preserved in exact source reading order.
+  - **IR-4 (Duplicate Heading Names):** Sections `4.2` and `7.1` ("Error Codes") receive unique IDs.
+  - **IR-5 (Phantom Table Filtering):** Geometric enclosure filtering strips phantom artifacts.
+  - **IR-6 (Numbered Lists in 3.3):** Items 1–5 preserved as body text, not false section headings.
+  - **IR-7 (Cross-Page Continuation):** Seamlessly joins multi-page sections (e.g. 3.1 across p2–p3).
 
-### 2. Explicit Handling of All 7 Confirmed Structural Irregularities
-- **IR-1 (Missing 2.1.1 Parent):** Section `2.1.1.1` cleanly attached to `2.1` with diagnostic warning.
-- **IR-2 (Body-Sized Heading Font):** Section `3.2` correctly recognized as Level-2 heading despite 11.0pt font.
-- **IR-3 (Out-of-Order Sections):** Sections `3.4` and `3.3` preserved in exact source reading order with sequence warning.
-- **IR-4 (Duplicate Heading Names):** Sections `4.2` and `7.1` ("Error Codes") receive unique occurrence IDs and respective parent trees.
-- **IR-5 (Phantom Table Filtering):** Geometric enclosure and sparsity filtering discard cell-internal phantoms while retaining genuine specification and error code tables.
-- **IR-6 (Numbered Lists in 3.3):** Blood pressure classification items 1–5 preserved as body text and not mistaken for section headings.
-- **IR-7 (Cross-Page Content Continuation):** Seamlessly joins multi-page section text (e.g. 3.1 across p2–p3, 8.1 in v2 across p6–p7).
+### 2. Immutable Relational Versioning (`app/db/models.py`)
+- Tracks conceptual documents, revisions (`DocumentVersion`), and sections (`NodeVersion`).
+- Computes SHA-256 cryptographic hashes over normalized headings, bodies, and tables.
+- Guarantees immutability: ingesting v2 leaves v1 node snapshots 100% untouched.
 
-### 3. Persistent Relational Versioning & Immutable Trees (`app/db/models.py`)
-- **`Document`:** Conceptual identity of the medical device manual.
-- **`DocumentVersion`:** Immutable snapshot of a specific revision (v1: 27 nodes, v2: 28 nodes).
-- **`LogicalNode`:** Permanent cross-version conceptual section identity.
-- **`NodeVersion`:** Version-specific occurrence storing body text, cryptographic hashes (`content_hash`, `heading_hash`, `body_hash`), source page range, table data, and diagnostics.
-- **SQLite Foreign Key Enforcement:** Strict connection pragmas enforce relational integrity.
+### 3. Version-Pinned Named Selections (`app/repositories/document_repository.py`)
+- Enables QA engineers to define named verification scopes (e.g., "Safety-Critical Operations").
+- Strictly pinned to an exact document version and node UUIDs; cannot silently slide across versions.
 
-### 4. Version-Pinned Named Selections (`app/db/models.py`, `app/repositories/document_repository.py`)
-- **`Selection` & `SelectionNode`:** Relational entities defining named verification scopes pinned to an exact, immutable document version.
-- **Strict Invariants:** A selection cannot span multiple document versions. Updating selection metadata never moves its pinned version. Deleting a selection never deletes underlying document history.
-- **Insertion Order Preserved:** `SelectionNode.order_index` guarantees deterministic node retrieval order.
+### 4. Explainable Staleness Classification (`app/services/staleness_classifier.py`)
+- Categorizes changes into 11 granular classifications (`NUMERIC_CHANGE`, `TIMING_CHANGE`, `TABLE_ROW`, etc.).
+- Precedence hierarchy guarantees numerical and timing changes take precedence over generic wording.
+- Automatically extracts parameter deltas:
+  - **§2.1.1.1:** Battery life `300` $\rightarrow$ `250 cycles`, warning `15%` $\rightarrow$ `10%`.
+  - **§3.2:** Cuff inflation increment `40` $\rightarrow$ `30 mmHg`.
+  - **§4.2:** Auto-deflation timing `2.0` $\rightarrow$ `1.5 seconds`, new error code `E6`.
+  - **§5.3:** New section `5.3 Data Export` added in v2.
 
-### 5. Explainable Staleness Classification (`app/services/staleness_classifier.py`)
-- **11 Granular Categories:** `NO_CHANGE`, `FORMATTING_ONLY`, `WORDING_CHANGE`, `NUMERIC_CHANGE`, `TIMING_CHANGE`, `STRUCTURAL_CHANGE`, `ADDED`, `REMOVED`, `MOVED`, `AMBIGUOUS`, `UNCLASSIFIED`.
-- **Precedence Hierarchy:** Timing and numerical changes take strict precedence over generic wording changes.
-- **Contextual Delta Extraction:** Deterministic regex extractor pairs modified parameters between old and new texts:
-  - §2.1.1.1: Battery life `300` $\rightarrow$ `250 cycles`, warning `15%` $\rightarrow$ `10%`.
-  - §3.2: Cuff inflation increment `40` $\rightarrow$ `30 mmHg`.
-  - §4.2: Auto-deflation timing `2` $\rightarrow$ `1.5 seconds`, new error code `E6 Bluetooth sync`.
-  - §4.3: Error code range `E1-E5` $\rightarrow$ `E1-E6`.
-- **Medical Risk Policy:** Any detected numerical or temporal shift flags `human_review_required: true`. Disclaimers included on every response.
+### 5. Grounded QA Test Generation (`app/services/qa_generation_service.py`)
+- Pluggable provider abstraction (`MockLLMProvider` for deterministic offline testing, `OpenAICompatibleProvider` for live LLMs).
+- Strict PascalCase Pydantic validation (`TestCaseId`, `Title`, `Prerequisites`, `Steps`, `ExpectedResult`, etc.).
+- Bounded retries (maximum 3 attempts) and SHA-256 request idempotency.
 
-### 6. Grounded QA Test Generation & LLM Provider Abstraction (`app/services/qa_generation_service.py`, `app/services/llm_provider.py`)
-- **Pluggable Architecture:** Configurable between `MockLLMProvider` (zero external calls, repeatable test suites) and `OpenAICompatibleProvider` (exponential backoff on 429/5xx).
-- **Strict Pydantic Output Validation:** Enforces exact PascalCase contract (`TestCaseId`, `Title`, `Prerequisites`, `Steps`, `ExpectedResult`, `PassFailCriteria`, `StandardRef`).
-- **Bounded Validation Retries:** Maximum 3 total model attempts. Corrective feedback prompts guide the model to fix formatting or count discrepancies.
-- **Deterministic Request Idempotency:** SHA-256 fingerprinting prevents duplicate executions on identical parameters while returning `HTTP 409 Conflict` on parameter mismatches.
-- **Atomic Document Store:** Concurrency-safe local JSON document store (`JsonTestSuiteStore`) with temporary write replacement, advisory file locking, and corrupted file safety.
-- **Cryptographic Provenance:** Binds exact source snapshot UUIDs, content hashes, and version labels directly to each test case.
-- **Cross-Version Test Case Staleness:** Audits generated test suites against target document revisions (`v2`) without mutating original `v1` provenance.
-
-### 7. Deterministic Source-Grounding Audit Engine (`app/services/grounding_auditor.py`)
-- **Five-Category Claim Classification:** Evaluates every assertion, parameter, unit, and test fixture into:
-  1. `SOURCE_SUPPORTED`: Explicitly present in cited source text or tables.
-  2. `DERIVED_WITH_EXPLANATION`: Logically derived step progressions (e.g. $180 + 40 = 220\text{ mmHg}$).
-  3. `PROPOSED_SETUP`: Engineering test bench fixtures or lab equipment tagged `[PROPOSED SETUP]` (not claimed as product specs).
-  4. `UNSUPPORTED`: Ungrounded parameters, invented tolerances ($\pm 2$ mmHg), or unlisted error codes. Automatically flags `human_review_required = True`.
-  5. `AMBIGUOUS`: Insufficient or conflicting source evidence.
-- **StandardRef Citation Verification:** Validates that citations point to real sections and rejects fabricated external standards.
-- **Suite-Level Aggregation:** Computes audit metrics and propagates human review flags to the suite payload.
+### 6. Deterministic 5-State Grounding Auditor (`app/services/grounding_auditor.py`)
+- Evaluates test assertions into 5 categories:
+  1. `SOURCE_SUPPORTED`: Explicitly present in cited manual text.
+  2. `DERIVED_WITH_EXPLANATION`: Verified arithmetic step progression (e.g. $180 + 40 = 220\text{ mmHg}$).
+  3. `PROPOSED_SETUP`: External test bench equipment tagged `[PROPOSED SETUP]`.
+  4. `UNSUPPORTED`: Invented tolerances (e.g. $\pm 2$ mmHg), unlisted codes, or contradictory negations.
+  5. `AMBIGUOUS`: Conflicting citations or missing provenance.
+- Automatically flags `human_review_required: true` on any ungrounded assertion.
 
 ---
 
-## REST API Reference
+## 5. System Architecture
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/documents/ingest?version=v1\|v2` | Transactional, idempotent ingestion of a manual revision. |
-| `GET` | `/api/v1/documents` | Lists registered documents and all ingested versions. |
-| `GET` | `/api/v1/documents/{document_id}/sections?version=v1` | Hierarchical section navigation tree. |
-| `GET` | `/api/v1/nodes/{node_version_id}` | Detailed node inspection with tables, diagnostics, and hashes. |
-| `GET` | `/api/v1/search?q=...&version=v1` | Full-text search across headings, bodies, and tables. |
-| `GET` | `/api/v1/nodes/{logical_node_id}/changes?from_version=v1&to_version=v2` | Unified textual diff between versions. |
-| `POST` | `/api/v1/selections` | Create a named selection pinned to a specific document version. |
-| `GET` | `/api/v1/selections?version=v1` | List selections with optional document and version filtering. |
-| `GET` | `/api/v1/selections/{selection_id}` | Retrieve selection details and all pinned node snapshots. |
-| `PATCH` | `/api/v1/selections/{selection_id}` | Update selection metadata or node membership within pinned version. |
-| `DELETE` | `/api/v1/selections/{selection_id}` | Delete selection without affecting underlying document history. |
-| `GET` | `/api/v1/selections/{selection_id}/staleness?target_version=v2` | Assess selection staleness with parameter deltas. |
-| `GET` | `/api/v1/selections/{selection_id}/impact?target_version=v2` | Partition selection nodes into affected and unaffected sets. |
-| `GET` | `/api/v1/documents/{document_id}/impact?from_version=v1&to_version=v2` | Document-wide impact analysis across all pinned selections. |
-| `POST` | `/api/v1/selections/{selection_id}/test-suites` | Generate 3–5 grounded QA test cases from a version-pinned selection. |
-| `POST` | `/api/v1/nodes/{node_version_id}/test-suites` | Generate 3–5 grounded QA test cases from an individual node version. |
-| `GET` | `/api/v1/test-suites/{generation_id}` | Retrieve persisted test suite and test cases by generation ID. |
-| `GET` | `/api/v1/selections/{selection_id}/test-suites` | List all generated test suites for a selection. |
-| `GET` | `/api/v1/nodes/{node_version_id}/test-suites` | List all test suites referencing an exact source node snapshot. |
-| `GET` | `/api/v1/test-suites/{generation_id}/staleness?target_version=v2` | Evaluate test suite staleness against target document revision. |
-| `GET` | `/api/v1/documents/{document_id}/test-suite-impact?from_version=v1&to_version=v2` | Document-wide test-suite impact across all generated suites. |
+```mermaid
+graph TD
+    subgraph Client["Client & CLI"]
+        CLI["scripts/evaluator_demo.py"]
+        REST["FastAPI HTTP Client"]
+        PYTEST["Pytest Suite"]
+    end
+
+    subgraph Core["FastAPI Application (app/main.py)"]
+        ParserSvc["Deterministic PDF Parser"]
+        IngestSvc["Document Ingestion Service"]
+        MatcherSvc["Version Matcher"]
+        QASvc["QA Generation Service"]
+        AuditSvc["Grounding Auditor"]
+        StalenessSvc["Staleness Classifier"]
+    end
+
+    subgraph Storage["Dual Storage Layer"]
+        SQLite["SQLite DB (Relational Lineage)"]
+        JSONStore["Atomic JSON Store (Test Suites)"]
+        MongoStore["Optional MongoDB Store"]
+    end
+
+    subgraph Providers["Provider Layer"]
+        MockLLM["MockLLMProvider (Offline)"]
+        RemoteLLM["OpenAICompatibleProvider"]
+    end
+
+    Client --> Core
+    IngestSvc --> ParserSvc
+    IngestSvc --> SQLite
+    QASvc --> Providers
+    QASvc --> AuditSvc
+    QASvc --> JSONStore
+    StalenessSvc --> MatcherSvc
+```
+
+For full architectural diagrams and component responsibilities, see [`docs/architecture.md`](docs/architecture.md).
 
 ---
 
-## Project Structure
+## 6. Technology Stack
+
+- **Language:** Python 3.10+ (tested on Python 3.13)
+- **Web Framework:** FastAPI, Uvicorn
+- **Data Validation & Contracts:** Pydantic v2
+- **Relational Persistence:** SQLAlchemy 2.0, SQLite (PRAGMA foreign keys enforced)
+- **PDF Extraction Engine:** `pdfplumber`
+- **Testing & Verification:** Pytest
+- **Document Storage:** Concurrency-safe JSON document store (with POSIX atomic rename and `fcntl.flock`) + optional MongoDB integration
+
+---
+
+## 7. Repository Structure
 
 ```
 Tri9T-AI/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py                     # FastAPI application with persistence, search, diff, selections & QA generation
-│   ├── core/
-│   │   ├── __init__.py
-│   │   └── config.py               # Application settings, LLM provider & store configuration
+│   ├── main.py                     # FastAPI REST API (18 documented endpoints)
+│   ├── core/config.py              # Application settings and environment variables
 │   ├── db/
-│   │   ├── __init__.py
-│   │   ├── base.py                 # SQLAlchemy DeclarativeBase
-│   │   ├── models.py               # Models: Document, DocumentVersion, LogicalNode, NodeVersion, Selection, SelectionNode
-│   │   └── session.py              # Engine, sessionmaker, and SQLite FK pragma
-│   ├── prompts/
-│   │   ├── __init__.py
-│   │   └── qa_generation.py        # System instructions, injection defense boundary, and prompt templates
+│   │   ├── base.py                 # DeclarativeBase metadata
+│   │   ├── models.py               # Document, DocumentVersion, LogicalNode, NodeVersion, Selection
+│   │   └── session.py              # SQLAlchemy engine and SQLite sessionmaker
+│   ├── prompts/qa_generation.py    # Prompts, formatting constraints, and injection boundaries
 │   ├── repositories/
-│   │   ├── __init__.py
-│   │   ├── document_repository.py  # Data access layer for relational document snapshots & selections
-│   │   ├── json_test_suite_store.py# Atomic filesystem document store with flock concurrency
-│   │   ├── mongo_test_suite_store.py# Decoupled MongoDB document store integration
-│   │   └── test_suite_store.py     # Document store abstraction and factory
+│   │   ├── document_repository.py  # Data access layer for relational entities
+│   │   ├── json_test_suite_store.py# Atomic JSON store with advisory locking
+│   │   ├── mongo_test_suite_store.py# Optional MongoDB document store
+│   │   └── test_suite_store.py     # Document store factory
 │   ├── schemas/
-│   │   ├── __init__.py
-│   │   ├── api.py                  # Pydantic schemas for API requests, responses, staleness & impact
-│   │   ├── document.py             # Pydantic schemas for extracted document trees
-│   │   └── qa_test_case.py         # Strict Pydantic models for QA test cases, suites & provenance
+│   │   ├── api.py                  # API request/response schemas
+│   │   ├── document.py             # Parser AST schemas
+│   │   └── qa_test_case.py         # QA test case, provenance, and audit schemas
 │   └── services/
-│       ├── __init__.py
-│       ├── document_ingestion.py   # Atomic transactional ingestion service
-│       ├── impact_analyzer.py      # Selection-centric and document-wide impact analysis engine
-│       ├── llm_provider.py         # BaseLLMProvider, OpenAICompatibleProvider, and MockLLMProvider
-│       ├── pdf_parser.py           # Core deterministic PDF hierarchy extraction engine
-│       ├── qa_generation_service.py# Grounded QA test case generation, validation retry loop & staleness
-│       ├── staleness_classifier.py # Rule-based explainable staleness classification engine
-│       └── version_matcher.py      # Multi-signal cross-version lineage matching engine
+│       ├── document_ingestion.py   # Atomic version ingestion service
+│       ├── grounding_auditor.py    # 5-state deterministic grounding auditor
+│       ├── impact_analyzer.py      # Selection and document impact analyzer
+│       ├── llm_provider.py         # MockLLMProvider & OpenAICompatibleProvider
+│       ├── pdf_parser.py           # Typography-based PDF parser (IR-1 to IR-7)
+│       ├── qa_generation_service.py# QA test generation, validation, and staleness
+│       ├── staleness_classifier.py # Explainable staleness classification engine
+│       └── version_matcher.py      # Multi-signal cross-version lineage matching
 ├── data/
-│   ├── ct200_manual.pdf            # CT-200 v1 technical manual (6 pages)
-│   ├── ct200_manual_v2.pdf         # CT-200 v2 technical manual (7 pages)
-│   └── IMPORTANT_ASSIGNMENT_UPDATE (Read to check MD).txt
+│   ├── ct200_manual.pdf            # CT-200 v1 manual (6 pages)
+│   └── ct200_manual_v2.pdf         # CT-200 v2 manual (7 pages)
 ├── docs/
-│   ├── stage-1-analysis.md         # Stage 1 repository audit and dataset analysis
-│   ├── stage-2-parser.md           # Stage 2 parser architecture and edge case handling
-│   ├── stage-3-versioning.md       # Stage 3 relational schema, lineage matching & API reference
-│   ├── stage-4-selections-staleness.md # Stage 4 selections, staleness classification & impact analysis
-│   ├── stage-5-qa-generation.md    # Stage 5 QA generation, validation, persistence & test staleness
-│   ├── final-acceptance-report.md  # Stage 6 integration and acceptance report
-│   ├── api-reference.md            # Complete API endpoints and schemas reference
-│   ├── stage-7-baseline-audit.md   # Stage 7 real baseline verification audit
-│   ├── stage-7-grounding-red-team.md # Stage 7 adversarial red-team test report
-│   ├── stage-7-versioning-audit.md # Stage 7 versioning, immutability & staleness audit
-│   ├── stage-7-generation-and-persistence-audit.md # Stage 7 QA generation & persistence audit
-│   ├── stage-7-api-security-review.md # Stage 7 API contract & security review
-│   ├── stage-7-reproducibility-report.md # Stage 7 clean-environment reproducibility report
-│   └── stage-7-final-report.md     # Stage 7 final reviewer acceptance & verification report
+│   ├── architecture.md             # System architecture and Mermaid diagrams
+│   ├── api-reference.md            # Comprehensive REST API reference
+│   ├── evaluator-checklist.md      # Reviewer evaluation checklist
+│   ├── evaluator-demo-guide.md     # 14-milestone walkthrough guide
+│   ├── stage-7-final-report.md     # Complete Stage 7 verification matrix
+│   ├── stage-7-grounding-red-team.md # 14 adversarial red-team test report
+│   ├── stage-8-submission-plan.md  # Stage 8 submission hardening plan
+│   └── examples/                   # Valid JSON sample responses
 ├── scripts/
-│   ├── __init__.py
-│   ├── stage7_final_verification.py# Single-command verification runner for reviewers
-│   ├── run_acceptance_demo.py      # 14-milestone acceptance demo script
-│   ├── demo_e2e_qa_generation.py   # Stage 5 13-step QA generation and test staleness demonstration
-│   ├── demo_e2e_staleness.py       # Stage 4 11-step selection staleness & impact demonstration
-│   ├── demo_e2e_versioning.py      # Stage 3 end-to-end versioning demonstration script
-│   ├── ingest_document.py          # CLI tool for ingesting manuals and viewing version summaries
-│   └── inspect_manual.py           # Standalone PDF diagnostic inspector
+│   ├── evaluator_demo.py           # 14-milestone evaluator walkthrough demo
+│   ├── stage7_final_verification.py# Single-command verification runner
+│   ├── final_acceptance_demo.py    # Stage 6 acceptance demo
+│   ├── ingest_document.py          # CLI ingestion tool
+│   └── inspect_manual.py           # PDF diagnostic tool
 ├── tests/
-│   ├── __init__.py
-│   ├── test_api.py                 # Base API endpoint tests
-│   ├── test_grounding_audit.py     # Deterministic grounding auditor tests
-│   ├── test_grounding_red_team.py  # 14 dedicated adversarial red-team grounding tests
-│   ├── test_impact_and_selection_api.py # Selection CRUD, staleness, and impact API integration tests
-│   ├── test_parser_edge_cases.py   # Dedicated tests for all 7 confirmed structural edge cases
-│   ├── test_pdf_parser.py          # Core parser extraction and table tests
-│   ├── test_persistence.py         # Atomic JSON and MongoDB document store tests
-│   ├── test_qa_generation.py       # Stage 5 QA generation, schemas, providers, retries & staleness tests
-│   ├── test_selections.py          # Selection models, repository methods, and immutability tests
-│   ├── test_staleness_classifier.py# Unit tests for staleness rules, deltas, and precedence
-│   ├── test_versioning_and_ingestion.py # DB schema, ingestion, idempotency & lineage tests
-│   └── test_versioning_api.py      # Persistent browse, search & diff endpoint tests
-├── .env.example                    # Environment configuration template
-├── .gitignore                      # Git exclusion rules
+│   ├── test_grounding_red_team.py  # 14 dedicated adversarial grounding tests
+│   ├── test_grounding_audit.py     # Grounding auditor tests
+│   ├── test_parser_edge_cases.py   # Dedicated tests for IR-1 through IR-7
+│   ├── test_pdf_parser.py          # PDF parser unit tests
+│   ├── test_persistence.py         # Atomic store and document repository tests
+│   ├── test_qa_generation.py       # QA generation service tests
+│   ├── test_selections.py          # Named selections tests
+│   ├── test_staleness_classifier.py# Staleness classifier unit tests
+│   ├── test_versioning_and_ingestion.py # Ingestion & lineage tests
+│   └── test_api.py                 # FastAPI route tests
 ├── pytest.ini                      # Pytest configuration
-├── README.md                       # Project documentation
+├── README.md                       # This project documentation
 └── requirements.txt                # Project dependencies
 ```
 
 ---
 
-## Setup & Execution
+## 8. Installation & Configuration
 
-### 1. Prerequisites & Installation
+### 1. Prerequisites
+- Python 3.10+
+- Git
+
+### 2. Setup Virtual Environment
 ```bash
 git clone https://github.com/ibharath-ofcl/Tri9T-AI.git
 cd Tri9T-AI
@@ -209,28 +246,86 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Single-Command Reviewer Verification (Recommended)
-Executes all Stage 7 verification checks in one pass (Full Pytest suite, 14-milestone acceptance demo, red-team test suite, and OpenAPI validation):
+### 3. Environment Configuration
+The application comes preconfigured for offline execution using SQLite and `MockLLMProvider`. No `.env` file is required for evaluation. To customize options, copy `.env.example`:
+```bash
+cp .env.example .env
+```
+
+---
+
+## 9. Quick-Start Instructions
+
+### Step 1: Run the Comprehensive Verification Runner (Recommended)
+Executes all unit tests, the 14-milestone acceptance demo, red-team tests, and OpenAPI validation in one pass:
 ```bash
 python3 -m scripts.stage7_final_verification
 ```
 
-### 3. Run the Full Automated Test Suite (90 Tests)
-Executes all regression and adversarial tests across all 10 test modules:
+### Step 2: Run the Evaluator Walkthrough Demo
+Visibly traces the full lifecycle from ingestion to staleness impact in ~0.6s:
+```bash
+python3 -m scripts.evaluator_demo
+```
+
+### Step 3: Launch the REST API & Explore Swagger Docs
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+- **Interactive Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **System Health:** [http://localhost:8000/health](http://localhost:8000/health)
+
+---
+
+## 10. Testing & Verification
+
+The project includes 90 automated tests across 10 test modules:
+
 ```bash
 pytest -v
 ```
 
-### 4. Run the 14-Milestone Acceptance Demo Directly
-Executes the comprehensive 14-milestone workflow on authentic CT-200 v1/v2 PDFs in isolated, disposable storage:
-```bash
-python3 -m scripts.run_acceptance_demo
-```
+### Test Suite Breakdown
+| Test Module | Tests | Focus Area |
+| :--- | :---: | :--- |
+| `tests/test_parser_edge_cases.py` | 7 | Edge cases IR-1 through IR-7 |
+| `tests/test_pdf_parser.py` | 10 | Typography extraction, font metadata, tables |
+| `tests/test_versioning_and_ingestion.py` | 13 | SQLite models, version snapshots, immutability |
+| `tests/test_selections.py` | 11 | Version-pinned selections & query methods |
+| `tests/test_staleness_classifier.py` | 8 | Precedence hierarchy, parameter deltas |
+| `tests/test_qa_generation.py` | 11 | PascalCase schema, bounded retries, idempotency |
+| `tests/test_grounding_audit.py` | 3 | Deterministic claim categorization |
+| `tests/test_grounding_red_team.py` | 14 | 14 adversarial red-team grounding vectors |
+| `tests/test_persistence.py` | 11 | Atomic file replace, flock concurrency, MongoDB |
+| `tests/test_api.py` | 2 | Base FastAPI health and routing |
+| **Total** | **90** | **100% Pass Rate (0 failures)** |
 
-### 5. Launch the FastAPI Server
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-- **Interactive Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **Health Telemetry:** [http://localhost:8000/health](http://localhost:8000/health)
+---
+
+## 11. Example Input & Output
+
+Reviewers can inspect verified sample JSON files under [`docs/examples/`](docs/examples/):
+- **Document Ingestion:** [`docs/examples/document_ingestion_response.json`](docs/examples/document_ingestion_response.json)
+- **Cross-Version Diff:** [`docs/examples/version_difference_response.json`](docs/examples/version_difference_response.json)
+- **Version-Pinned Selection:** [`docs/examples/named_selection_response.json`](docs/examples/named_selection_response.json)
+- **Generated QA Test Case with Provenance:** [`docs/examples/generated_qa_test_case.json`](docs/examples/generated_qa_test_case.json)
+- **Grounding Audit with Unsupported Claim:** [`docs/examples/grounding_audit_response.json`](docs/examples/grounding_audit_response.json)
+- **Staleness Impact Analysis:** [`docs/examples/staleness_impact_response.json`](docs/examples/staleness_impact_response.json)
+
+---
+
+## 12. Known Limitations
+
+1. **Deterministic Heuristics:** The grounding auditor canonicalizes units, numbers, tolerances, and negations, but complex clinical deduplication requires human engineering judgment.
+2. **Local Atomic Persistence:** SQLite and JSON stores use local OS-level atomicity (`os.replace` and `fcntl.flock`). Distributed 2-phase commit across SQLite and MongoDB is not implemented.
+3. **Mock LLM Default:** The offline mock provider generates reproducible test cases based on CT-200 specifications. Live LLM testing requires configuring remote OpenAI credentials.
+
+---
+
+## 13. Safety & Intended-Use Disclaimer
+
+> [!CAUTION]
+> **Regulatory Disclaimer:**  
+> This software is an engineering assignment prototype. It has **not** been certified, cleared, or validated under FDA 21 CFR Part 820, IEC 62304, ISO 13485, or ISO 14971.  
+> All test assertions, parameter tolerances, and safety classifications generated by this system must be reviewed and approved by a qualified biomedical engineer prior to clinical use or execution on physical hardware.

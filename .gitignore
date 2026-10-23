@@ -52,9 +52,10 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
-# Large document binaries (PDF manuals kept locally in data/)
-data/*.pdf
+# Document binaries (Track official CT-200 manuals required for evaluation)
 *.pdf
+!data/ct200_manual.pdf
+!data/ct200_manual_v2.pdf
 
 # Debugging and temporary parser artifacts
 scratch/

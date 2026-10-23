@@ -1,0 +1,18 @@
+{
+  "status": "success",
+  "document_id": "c0fcd1e6-a7f5-4b25-838e-9dab60f8853a",
+  "version_id": "a327ba00-843a-4467-bc32-1b1e427142b7",
+  "version_label": "v1",
+  "source_sha256": "4b6da1553531a7c5c0d51ec12e84d4fa71ca2a818e974e1e0750fc901968593a",
+  "page_count": 6,
+  "total_nodes": 27,
+  "is_idempotent_replay": false,
+  "match_summary": {
+    "total_nodes": 27,
+    "matched_nodes": 0,
+    "new_nodes": 27,
+    "deleted_nodes": 0
+  },
+  "diagnostics_count": 0,
+  "message": "Successfully ingested CardioTrack CT-200 Technical Manual version v1 (27 nodes across 6 pages)."
+}

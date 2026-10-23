@@ -1,0 +1,30 @@
+{
+  "logical_node_id": "8ad036df-b9a1-4328-971c-43df890a56fe",
+  "canonical_section_number": "4.2",
+  "canonical_heading": "4.2 Error Codes",
+  "change_classification": "TIMING_CHANGE",
+  "is_content_changed": true,
+  "from_version": {
+    "exists": true,
+    "version_label": "v1",
+    "node_version_id": "4dcdb9c2-5e67-4288-a764-f98b18ec4920",
+    "section_number": "4.2",
+    "heading": "4.2 Error Codes",
+    "content_hash": "96be26dc07b58c1ea817cfaee1a7a0b329c2ea55811c79a970e5b745ce9b61d2",
+    "page_range": "p. 4-4",
+    "body_text": "The CT-200 provides deterministic error code diagnostics in Table 4.1. If an overpressure condition (> 299 mmHg) occurs, the device immediately initiates automatic cuff deflation within 2.0 seconds and logs error E3."
+  },
+  "to_version": {
+    "exists": true,
+    "version_label": "v2",
+    "node_version_id": "893cfa32-9cb4-490e-b072-127aa29b9f51",
+    "section_number": "4.2",
+    "heading": "4.2 Error Codes",
+    "content_hash": "1537e289bf50d0322ba97ecf8444a1d48c08794c483ce82dfd6c07a9b6c167d5",
+    "page_range": "p. 4-5",
+    "body_text": "The CT-200 provides deterministic error code diagnostics in Table 4.1. If an overpressure condition (> 299 mmHg) occurs, the device immediately initiates automatic cuff deflation within 1.5 seconds and logs error E3. Error code E6 indicates Bluetooth synchronization failure."
+  },
+  "diff_summary": "@@ -1,3 +1,3 @@\n-cuff deflation within 2.0 seconds and logs error E3.\n+cuff deflation within 1.5 seconds and logs error E3. Error code E6 indicates Bluetooth synchronization failure.",
+  "matching_confidence": 1.0,
+  "notes": "Matched by canonical section number '4.2' and heading '4.2 Error Codes'."
+}

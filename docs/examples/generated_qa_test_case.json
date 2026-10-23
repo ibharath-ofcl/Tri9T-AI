@@ -1,0 +1,86 @@
+{
+  "TestCaseId": "TC-CUFF-001",
+  "Title": "Verify Incremental Cuff Inflation Step Size and Maximum Limit",
+  "Prerequisites": [
+    "Device powered with fresh AA alkaline batteries.",
+    "CardioTrack CT-200 cuff connected to calibrated digital pressure standard [PROPOSED SETUP]."
+  ],
+  "Steps": [
+    "Wrap cuff around adult test cylinder (arm circumference 22-32 cm).",
+    "Initiate blood pressure measurement sequence by depressing START.",
+    "Simulate absent pulse signal at 180 mmHg baseline pressure threshold.",
+    "Record sequential pressure inflation steps up to upper measurement limit."
+  ],
+  "ExpectedResult": "If the user's pulse is not detected by 180 mmHg, the device inflates in 40 mmHg increments up to a maximum of 299 mmHg before aborting with an error.",
+  "PassFailCriteria": "PASS if inflation increases by exactly 40 mmHg per step up to 299 mmHg. FAIL if increment differs from 40 mmHg or exceeds 299 mmHg.",
+  "StandardRef": "CT-200 Manual Section 3.2 Cuff Inflation Sequence",
+  "TestType": "boundary",
+  "CoverageTags": [
+    "pneumatic",
+    "inflation",
+    "safety_cutoff",
+    "pressure"
+  ],
+  "HumanReviewRequired": false,
+  "ValidationWarnings": [],
+  "Provenance": {
+    "selection_id": "b7f5a653-f728-4ef6-81cf-67f0b5d564fa",
+    "source_node_version_id": "2a25c9aa-062e-4cb8-8f85-30bb622f9889",
+    "source_content_hash": "547758b53703d0eb6d6d7c71baeb3fa36ef8be308c962b8e3a2c070c73e86c07",
+    "source_logical_node_id": "238c0086-a212-4eb2-a634-11cb4ff0a324",
+    "source_document_version_id": "a327ba00-843a-4467-bc32-1b1e427142b7",
+    "source_document_version_label": "v1",
+    "section_number": "3.2",
+    "heading": "3.2 Cuff Inflation Sequence",
+    "page_start": 3,
+    "page_end": 3
+  },
+  "GroundingAudit": {
+    "test_case_id": "TC-CUFF-001",
+    "overall_grounding_status": "PROPOSED_SETUP_PRESENT",
+    "claims_count": 12,
+    "source_supported_count": 10,
+    "derived_count": 0,
+    "proposed_setup_count": 2,
+    "unsupported_count": 0,
+    "ambiguous_count": 0,
+    "human_review_required": false,
+    "audited_claims": [
+      {
+        "claim_text": "calibrated digital pressure standard [PROPOSED SETUP]",
+        "field_name": "Prerequisites",
+        "category": "PROPOSED_SETUP",
+        "evidence": "Tag '[PROPOSED SETUP]' explicitly declared",
+        "explanation": "Prerequisite tagged as test fixture/equipment; not claimed as manufacturer manual requirement.",
+        "requires_human_review": false
+      },
+      {
+        "claim_text": "180 mmHg",
+        "field_name": "ExpectedResult",
+        "category": "SOURCE_SUPPORTED",
+        "evidence": "Verified in Section 3.2",
+        "explanation": "Numerical parameter 180 mmHg verified against source manual.",
+        "requires_human_review": false
+      },
+      {
+        "claim_text": "40 mmHg",
+        "field_name": "ExpectedResult",
+        "category": "SOURCE_SUPPORTED",
+        "evidence": "Verified in Section 3.2",
+        "explanation": "Numerical parameter 40 mmHg verified against source manual.",
+        "requires_human_review": false
+      },
+      {
+        "claim_text": "299 mmHg",
+        "field_name": "ExpectedResult",
+        "category": "SOURCE_SUPPORTED",
+        "evidence": "Verified in Section 3.2",
+        "explanation": "Numerical parameter 299 mmHg verified against source manual.",
+        "requires_human_review": false
+      }
+    ],
+    "findings": [
+      "Prerequisite test fixture 'calibrated digital pressure standard' flagged as proposed lab equipment."
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "test_case_id": "TC-ADV-001",
+  "overall_grounding_status": "UNSUPPORTED_CLAIMS",
+  "claims_count": 4,
+  "source_supported_count": 1,
+  "derived_count": 0,
+  "proposed_setup_count": 0,
+  "unsupported_count": 3,
+  "ambiguous_count": 0,
+  "human_review_required": true,
+  "audited_claims": [
+    {
+      "claim_text": "99.9% uptime requirement",
+      "field_name": "Prerequisites",
+      "category": "UNSUPPORTED",
+      "evidence": null,
+      "explanation": "Unverified prerequisite condition: 'Digital pressure gauge connected with 99.9% uptime requirement.'.",
+      "requires_human_review": true
+    },
+    {
+      "claim_text": "40 mmHg",
+      "field_name": "ExpectedResult",
+      "category": "SOURCE_SUPPORTED",
+      "evidence": "Verified in Section 3.2",
+      "explanation": "Numerical parameter 40 mmHg verified against source manual.",
+      "requires_human_review": false
+    },
+    {
+      "claim_text": "2 mmHg",
+      "field_name": "ExpectedResult",
+      "category": "UNSUPPORTED",
+      "evidence": null,
+      "explanation": "Numerical parameter 2 mmHg not established in Section 3.2 or related tables.",
+      "requires_human_review": true
+    },
+    {
+      "claim_text": "±2 mmHg",
+      "field_name": "ExpectedResult",
+      "category": "UNSUPPORTED",
+      "evidence": null,
+      "explanation": "Tolerance limit '±2 mmHg' is not established in manual (Section 2.1 specifies ±3 mmHg sensor accuracy).",
+      "requires_human_review": true
+    }
+  ],
+  "findings": [
+    "Unverified prerequisite condition: 'Digital pressure gauge connected with 99.9% uptime requirement.'.",
+    "Unsupported numerical parameter 2 mmHg in ExpectedResult.",
+    "Unsupported tolerance ±2 mmHg in ExpectedResult (exceeds or alters stated device accuracy)."
+  ]
+}

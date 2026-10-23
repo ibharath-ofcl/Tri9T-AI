@@ -1,0 +1,122 @@
+{
+  "selection_id": "b7f5a653-f728-4ef6-81cf-67f0b5d564fa",
+  "selection_name": "CT200-Core-Safety-Critical-Suite",
+  "pinned_version_label": "v1",
+  "target_version_label": "v2",
+  "aggregate_status": "IMPACTED",
+  "summary": {
+    "total_nodes": 3,
+    "current_nodes": 0,
+    "stale_nodes": 3,
+    "removed_nodes": 0,
+    "moved_nodes": 0,
+    "ambiguous_nodes": 0
+  },
+  "human_review_required": true,
+  "disclaimer": "This staleness analysis is a deterministic engineering comparison prototype. All impacted specifications must be reviewed and verified by a qualified biomedical engineer before updating production verification protocols.",
+  "node_assessments": [
+    {
+      "node_version_id": "a2aec38a-cf21-4f08-b196-857c3da89ff0",
+      "logical_node_id": "5cc13d3b-9a48-4cb4-a3f4-d57a44a67812",
+      "section_number": "2.1.1.1",
+      "heading": "2.1.1.1 Battery Life Under Typical Use",
+      "from_version_label": "v1",
+      "to_version_label": "v2",
+      "status": "STALE",
+      "classification": "NUMERIC_CHANGE",
+      "from_content_hash": "dec9f4eebc56542fba7b1652410a562ef616f7284b553655b3992ea6da7da197",
+      "to_content_hash": "252f2f7baeb187e14d06a72e7cb359a44ca70b4fa12bf129188bf697ec89da6e",
+      "target_node_version_id": "766c1b3f-1d88-4682-8877-e2da49308d24",
+      "target_section_number": "2.1.1.1",
+      "target_heading": "2.1.1.1 Battery Life Under Typical Use",
+      "deltas": [
+        {
+          "delta_type": "numeric",
+          "old_value": "300",
+          "new_value": "250",
+          "unit": "measurement cycles",
+          "context": "Four AA alkaline batteries provide approximately 300 measurement cycles",
+          "explanation": "Numerical value modified from 300 measurement cycles to 250 measurement cycles."
+        },
+        {
+          "delta_type": "numeric",
+          "old_value": "15",
+          "new_value": "10",
+          "unit": "%",
+          "context": "low-battery icon once remaining capacity falls below 15%",
+          "explanation": "Numerical value modified from 15 % to 10 %."
+        }
+      ],
+      "diff_summary": "@@ -1,3 +1,3 @@\n-Four AA alkaline batteries provide approximately 300 measurement cycles under normal operating conditions. The device displays a low-battery icon once remaining capacity falls below 15%.\n+Four AA alkaline batteries provide approximately 250 measurement cycles under normal operating conditions. The device displays a low-battery icon once remaining capacity falls below 10%.",
+      "explanation": "Numerical value modified from 300 measurement cycles to 250 measurement cycles.; Numerical value modified from 15 % to 10 %..",
+      "human_review_required": true,
+      "evidence_level": "HIGH"
+    },
+    {
+      "node_version_id": "2a25c9aa-062e-4cb8-8f85-30bb622f9889",
+      "logical_node_id": "238c0086-a212-4eb2-a634-11cb4ff0a324",
+      "section_number": "3.2",
+      "heading": "3.2 Cuff Inflation Sequence",
+      "from_version_label": "v1",
+      "to_version_label": "v2",
+      "status": "STALE",
+      "classification": "NUMERIC_CHANGE",
+      "from_content_hash": "547758b53703d0eb6d6d7c71baeb3fa36ef8be308c962b8e3a2c070c73e86c07",
+      "to_content_hash": "2ff1a7872d5c3176bfa254ff98c19985223e743a6df9d1cf367b6bf8ce934094",
+      "target_node_version_id": "422c1b9a-4311-44bb-8b77-cfc815ec5983",
+      "target_section_number": "3.2",
+      "target_heading": "3.2 Cuff Inflation Sequence",
+      "deltas": [
+        {
+          "delta_type": "numeric",
+          "old_value": "40",
+          "new_value": "30",
+          "unit": "mmHg",
+          "context": "inflates in 40 mmHg increments",
+          "explanation": "Numerical value modified from 40 mmHg to 30 mmHg."
+        }
+      ],
+      "diff_summary": "@@ -1,3 +1,3 @@\n-If the user's pulse is not detected by 180 mmHg, the device inflates in 40 mmHg increments up to a maximum of 299 mmHg before aborting with an error.\n+If the user's pulse is not detected by 180 mmHg, the device inflates in 30 mmHg increments up to a maximum of 299 mmHg before aborting with an error.",
+      "explanation": "Numerical value modified from 40 mmHg to 30 mmHg..",
+      "human_review_required": true,
+      "evidence_level": "HIGH"
+    },
+    {
+      "node_version_id": "4dcdb9c2-5e67-4288-a764-f98b18ec4920",
+      "logical_node_id": "8ad036df-b9a1-4328-971c-43df890a56fe",
+      "section_number": "4.2",
+      "heading": "4.2 Error Codes",
+      "from_version_label": "v1",
+      "to_version_label": "v2",
+      "status": "STALE",
+      "classification": "TIMING_CHANGE",
+      "from_content_hash": "96be26dc07b58c1ea817cfaee1a7a0b329c2ea55811c79a970e5b745ce9b61d2",
+      "to_content_hash": "1537e289bf50d0322ba97ecf8444a1d48c08794c483ce82dfd6c07a9b6c167d5",
+      "target_node_version_id": "893cfa32-9cb4-490e-b072-127aa29b9f51",
+      "target_section_number": "4.2",
+      "target_heading": "4.2 Error Codes",
+      "deltas": [
+        {
+          "delta_type": "table_row",
+          "old_value": null,
+          "new_value": "Row 'E6'",
+          "unit": "table row",
+          "context": "Table 4.1 Error Codes",
+          "explanation": "New table entry 'E6' added in target version."
+        },
+        {
+          "delta_type": "timing",
+          "old_value": "2",
+          "new_value": "1.5",
+          "unit": "seconds",
+          "context": "deflation within 2 seconds",
+          "explanation": "Timing parameter changed from 2 seconds to 1.5 seconds."
+        }
+      ],
+      "diff_summary": "@@ -1,3 +1,3 @@\n-cuff deflation within 2.0 seconds and logs error E3.\n+cuff deflation within 1.5 seconds and logs error E3. Error code E6 indicates Bluetooth synchronization failure.",
+      "explanation": "New table entry 'E6' added in target version.; Timing parameter changed from 2 seconds to 1.5 seconds..",
+      "human_review_required": true,
+      "evidence_level": "HIGH"
+    }
+  ]
+}
