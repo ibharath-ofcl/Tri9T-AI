@@ -323,6 +323,7 @@ Reviewers and assessors can access presentation slides, interactive walkthrough 
 - **Live Demo Runbook (5–7 Mins):** [`docs/final-live-demo-runbook.md`](docs/final-live-demo-runbook.md)
 - **Technical Defense & Question Bank (27 Q&As + Pitches):** [`docs/final-project-defense-questions.md`](docs/final-project-defense-questions.md)
 - **Final Submission & Reproducibility Audit:** [`docs/stage-10-final-submission-report.md`](docs/stage-10-final-submission-report.md)
+- **Final Release Acceptance & Freeze:** [`docs/stage-12-final-release-acceptance.md`](docs/stage-12-final-release-acceptance.md)
 - **Requirements Traceability Matrix (16/16 PASS):** [`docs/requirements-traceability.md`](docs/requirements-traceability.md)
 
 ---
