@@ -50,9 +50,27 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db(bind_engine=None) -> None:
-    """Create all tables in the configured database."""
+    """Create all tables in the configured database and apply self-healing column migrations."""
     target_engine = bind_engine or engine
     Base.metadata.create_all(bind=target_engine)
+
+    # Lightweight self-healing column migration for SQLite
+    try:
+        with target_engine.connect() as conn:
+            cursor = conn.connection.cursor()
+            cols = [col[1] for col in cursor.execute("PRAGMA table_info(selections)").fetchall()]
+            if cols:
+                if "document_id" not in cols:
+                    cursor.execute("ALTER TABLE selections ADD COLUMN document_id VARCHAR(36) REFERENCES documents(id)")
+                if "description" not in cols:
+                    cursor.execute("ALTER TABLE selections ADD COLUMN description TEXT")
+                if "metadata_json" not in cols:
+                    cursor.execute("ALTER TABLE selections ADD COLUMN metadata_json TEXT")
+                if "updated_at" not in cols:
+                    cursor.execute("ALTER TABLE selections ADD COLUMN updated_at DATETIME")
+                conn.connection.commit()
+    except Exception:
+        pass
 
 
 def drop_db(bind_engine=None) -> None:
