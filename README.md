@@ -290,15 +290,16 @@ pytest -v
 | Test Module | Tests | Focus Area |
 | :--- | :---: | :--- |
 | `tests/test_parser_edge_cases.py` | 7 | Edge cases IR-1 through IR-7 |
-| `tests/test_pdf_parser.py` | 10 | Typography extraction, font metadata, tables |
-| `tests/test_versioning_and_ingestion.py` | 13 | SQLite models, version snapshots, immutability |
-| `tests/test_selections.py` | 11 | Version-pinned selections & query methods |
-| `tests/test_staleness_classifier.py` | 8 | Precedence hierarchy, parameter deltas |
-| `tests/test_qa_generation.py` | 11 | PascalCase schema, bounded retries, idempotency |
-| `tests/test_grounding_audit.py` | 3 | Deterministic claim categorization |
+| `tests/test_pdf_parser.py` | 6 | Typography extraction, font metadata, tables |
+| `tests/test_versioning_and_ingestion.py` | 8 | SQLite models, version snapshots, immutability |
+| `tests/test_versioning_api.py` | 5 | Ingestion, section tree, node detail, search & diff APIs |
+| `tests/test_selections.py` | 8 | Version-pinned selections CRUD & immutability |
+| `tests/test_impact_and_selection_api.py` | 3 | Selection lifecycle, validation, and staleness/impact endpoints |
+| `tests/test_staleness_classifier.py` | 11 | Precedence hierarchy, numerical & timing deltas |
+| `tests/test_qa_generation.py` | 15 | PascalCase schema, bounded retries, idempotency & persistence |
+| `tests/test_grounding_audit.py` | 9 | Deterministic 5-state claim categorization & cross-store audit |
 | `tests/test_grounding_red_team.py` | 14 | 14 adversarial red-team grounding vectors |
-| `tests/test_persistence.py` | 11 | Atomic file replace, flock concurrency, MongoDB |
-| `tests/test_api.py` | 2 | Base FastAPI health and routing |
+| `tests/test_api.py` | 4 | Base FastAPI health, preview, and error routing |
 | **Total** | **90** | **100% Pass Rate (0 failures)** |
 
 ---
