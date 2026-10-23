@@ -280,7 +280,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 10. Testing & Verification
 
-The project includes 90 automated tests across 10 test modules:
+The project includes 90 automated tests across 11 test modules:
 
 ```bash
 pytest -v
@@ -316,7 +316,18 @@ Reviewers can inspect verified sample JSON files under [`docs/examples/`](docs/e
 
 ---
 
-## 12. Known Limitations
+## 12. Evaluator Presentation & Defense Resources
+
+Reviewers and assessors can access presentation slides, interactive walkthrough runbooks, and technical defense materials:
+- **Slide Presentation (10 Slides):** [`docs/final-evaluator-presentation.md`](docs/final-evaluator-presentation.md)
+- **Live Demo Runbook (5–7 Mins):** [`docs/final-live-demo-runbook.md`](docs/final-live-demo-runbook.md)
+- **Technical Defense & Question Bank (27 Q&As + Pitches):** [`docs/final-project-defense-questions.md`](docs/final-project-defense-questions.md)
+- **Final Submission & Reproducibility Audit:** [`docs/stage-10-final-submission-report.md`](docs/stage-10-final-submission-report.md)
+- **Requirements Traceability Matrix (16/16 PASS):** [`docs/requirements-traceability.md`](docs/requirements-traceability.md)
+
+---
+
+## 13. Known Limitations
 
 1. **Deterministic Heuristics:** The grounding auditor canonicalizes units, numbers, tolerances, and negations, but complex clinical deduplication requires human engineering judgment.
 2. **Local Atomic Persistence:** SQLite and JSON stores use local OS-level atomicity (`os.replace` and `fcntl.flock`). Distributed 2-phase commit across SQLite and MongoDB is not implemented.
@@ -324,7 +335,7 @@ Reviewers can inspect verified sample JSON files under [`docs/examples/`](docs/e
 
 ---
 
-## 13. Safety & Intended-Use Disclaimer
+## 14. Safety & Intended-Use Disclaimer
 
 > [!CAUTION]
 > **Regulatory Disclaimer:**  
